@@ -1,10 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/backup_service.dart';
+import '../../../providers/budget_provider.dart';
+import '../../../providers/category_provider.dart';
+import '../../../providers/debt_provider.dart';
+import '../../../providers/goal_provider.dart';
+import '../../../providers/recurring_provider.dart';
+import '../../../providers/security_provider.dart';
 import '../../../providers/settings_provider.dart';
+import '../../../providers/transaction_provider.dart';
+import '../../../providers/wallet_provider.dart';
+import '../../widgets/export_bottom_sheet.dart';
 import '../categories/categories_screen.dart';
 import '../debts/debts_screen.dart';
 import '../goals/goals_screen.dart';
+import '../recurring/recurring_transactions_screen.dart';
+import '../security/lock_screen.dart';
 import '../wallets/wallets_screen.dart';
 import 'currency_picker_screen.dart';
 
@@ -14,17 +26,19 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
+    final secProvider = context.watch<SecurityProvider>();
     final isArabic = settings.isArabic;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isArabic ? 'الإعدادات والمزيد' : 'Settings & More'),
+        title: Text(isArabic ? 'الإعدادات والخدمات' : 'Settings & Services'),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Quick Management Tools Card
+          // 1. Data Management & Management Tools
+          _buildSectionHeader(isArabic ? 'إدارة البيانات والأقسام' : 'Data & Management', isArabic),
           Container(
             decoration: BoxDecoration(
               color: Theme.of(context).cardTheme.color,
@@ -59,6 +73,17 @@ class SettingsScreen extends StatelessWidget {
                 _buildDivider(context),
                 _buildTile(
                   context,
+                  icon: Icons.repeat_rounded,
+                  iconColor: const Color(0xFF6366F1),
+                  title: isArabic ? 'المعاملات المتكررة والاشتراكات' : 'Recurring & Subscriptions',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const RecurringTransactionsScreen()),
+                  ),
+                ),
+                _buildDivider(context),
+                _buildTile(
+                  context,
                   icon: Icons.savings_rounded,
                   iconColor: const Color(0xFFF59E0B),
                   title: isArabic ? 'أهداف التوفير والادخار' : 'Savings Goals',
@@ -81,15 +106,187 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
-          // Preferences & App Config
-          Text(
-            isArabic ? 'تفضيلات التطبيق' : 'App Preferences',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          // 2. Export & Backup Section
+          _buildSectionHeader(isArabic ? 'التقارير والنسخ الاحتياطي' : 'Reports & Backup', isArabic),
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardTheme.color,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+              ),
+            ),
+            child: Column(
+              children: [
+                _buildTile(
+                  context,
+                  icon: Icons.picture_as_pdf_rounded,
+                  iconColor: Colors.redAccent,
+                  title: isArabic ? 'تصدير التقارير (PDF / Excel)' : 'Export Reports (PDF / Excel)',
+                  onTap: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => const ExportBottomSheet(),
+                    );
+                  },
+                ),
+                _buildDivider(context),
+                _buildTile(
+                  context,
+                  icon: Icons.cloud_upload_rounded,
+                  iconColor: AppColors.income,
+                  title: isArabic ? 'إنشاء نسخة احتياطية من البيانات' : 'Backup Database',
+                  subtitle: isArabic ? 'حفظ وتصدير كافة بيانات التطبيق' : 'Save and export all data',
+                  onTap: () => _handleCreateBackup(context, isArabic),
+                ),
+                _buildDivider(context),
+                _buildTile(
+                  context,
+                  icon: Icons.cloud_download_rounded,
+                  iconColor: AppColors.primary,
+                  title: isArabic ? 'استعادة البيانات من نسخة احتياطية' : 'Restore from Backup',
+                  subtitle: isArabic ? 'استرجاع المحافظ والمعاملات' : 'Restore wallets & transactions',
+                  onTap: () => _handleRestoreBackup(context, isArabic),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
 
+          // 3. Security & App Lock
+          _buildSectionHeader(isArabic ? 'الأمان وقفل التطبيق' : 'Security & App Lock', isArabic),
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardTheme.color,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+              ),
+            ),
+            child: Column(
+              children: [
+                // Biometrics Switch
+                _buildTile(
+                  context,
+                  icon: Icons.fingerprint_rounded,
+                  iconColor: AppColors.income,
+                  title: isArabic ? 'القفل بالبصمة (Biometrics / Face ID)' : 'Biometrics / Face ID',
+                  trailing: Switch(
+                    value: secProvider.isBiometricsEnabled,
+                    activeThumbColor: AppColors.primary,
+                    onChanged: (val) {
+                      secProvider.setBiometricsEnabled(val);
+                    },
+                  ),
+                ),
+                _buildDivider(context),
+
+                // PIN Code Option
+                _buildTile(
+                  context,
+                  icon: Icons.pin_rounded,
+                  iconColor: const Color(0xFF8B5CF6),
+                  title: secProvider.hasPin
+                      ? (isArabic ? 'رمز PIN (مفعّل)' : 'PIN Code (Enabled)')
+                      : (isArabic ? 'إعداد رمز PIN للتطبيق' : 'Set up PIN Code'),
+                  subtitle: secProvider.hasPin
+                      ? (isArabic ? 'اضغط لتغيير أو إزالة رمز PIN' : 'Tap to change or remove PIN')
+                      : null,
+                  trailing: secProvider.hasPin
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: AppColors.expense, size: 20),
+                              tooltip: isArabic ? 'إزالة الرمز' : 'Remove PIN',
+                              onPressed: () async {
+                                await secProvider.removePin();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(isArabic ? 'تمت إزالة رمز PIN' : 'PIN removed')),
+                                  );
+                                }
+                              },
+                            ),
+                            const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
+                          ],
+                        )
+                      : const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const LockScreen(mode: LockMode.setupPin),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // 4. Notifications & Reminders
+          _buildSectionHeader(isArabic ? 'التنبيهات والتذكيرات' : 'Notifications & Reminders', isArabic),
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardTheme.color,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+              ),
+            ),
+            child: Column(
+              children: [
+                _buildTile(
+                  context,
+                  icon: Icons.notifications_active_rounded,
+                  iconColor: const Color(0xFFF59E0B),
+                  title: isArabic ? 'التذكير اليومي بتسجيل المصاريف' : 'Daily Expense Reminder',
+                  trailing: Switch(
+                    value: settings.isDailyReminderEnabled,
+                    activeThumbColor: AppColors.primary,
+                    onChanged: (val) {
+                      settings.setDailyReminderEnabled(val);
+                    },
+                  ),
+                ),
+                if (settings.isDailyReminderEnabled) ...[
+                  _buildDivider(context),
+                  _buildTile(
+                    context,
+                    icon: Icons.access_time_rounded,
+                    iconColor: AppColors.info,
+                    title: isArabic ? 'وقت التذكير' : 'Reminder Time',
+                    trailing: Text(
+                      '${settings.reminderHour.toString().padLeft(2, '0')}:${settings.reminderMinute.toString().padLeft(2, '0')}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    onTap: () async {
+                      final time = await showTimePicker(
+                        context: context,
+                        initialTime: TimeOfDay(
+                          hour: settings.reminderHour,
+                          minute: settings.reminderMinute,
+                        ),
+                      );
+                      if (time != null) {
+                        await settings.setReminderTime(time.hour, time.minute);
+                      }
+                    },
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // 5. Preferences & App Config
+          _buildSectionHeader(isArabic ? 'تفضيلات التطبيق' : 'App Preferences', isArabic),
           Container(
             decoration: BoxDecoration(
               color: Theme.of(context).cardTheme.color,
@@ -166,22 +363,6 @@ class SettingsScreen extends StatelessWidget {
                     );
                   },
                 ),
-                _buildDivider(context),
-
-                // Biometrics Security
-                _buildTile(
-                  context,
-                  icon: Icons.fingerprint_rounded,
-                  iconColor: AppColors.income,
-                  title: isArabic ? 'قفل التطبيق بالبصمة' : 'Biometrics / Face ID',
-                  trailing: Switch(
-                    value: settings.isBiometricsEnabled,
-                    activeThumbColor: AppColors.primary,
-                    onChanged: (val) {
-                      settings.setBiometricsEnabled(val);
-                    },
-                  ),
-                ),
               ],
             ),
           ),
@@ -236,11 +417,22 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildSectionHeader(String title, bool isArabic) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10, left: 4, right: 4),
+      child: Text(
+        title,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+      ),
+    );
+  }
+
   Widget _buildTile(
     BuildContext context, {
     required IconData icon,
     required Color iconColor,
     required String title,
+    String? subtitle,
     Widget? trailing,
     VoidCallback? onTap,
   }) {
@@ -258,6 +450,12 @@ class SettingsScreen extends StatelessWidget {
         title,
         style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
       ),
+      subtitle: subtitle != null
+          ? Text(
+              subtitle,
+              style: TextStyle(fontSize: 11, color: Theme.of(context).textTheme.bodyMedium?.color),
+            )
+          : null,
       trailing: trailing ?? const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
       onTap: onTap,
     );
@@ -271,5 +469,78 @@ class SettingsScreen extends StatelessWidget {
       color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
       indent: 52,
     );
+  }
+
+  Future<void> _handleCreateBackup(BuildContext context, bool isArabic) async {
+    final result = await BackupService.createAndShareBackup(isArabic);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          backgroundColor: result.success ? AppColors.income : AppColors.expense,
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleRestoreBackup(BuildContext context, bool isArabic) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(isArabic ? 'تأكيد استعادة البيانات' : 'Confirm Restore'),
+        content: Text(
+          isArabic
+              ? 'تنبيه: سيتم استبدال البيانات الحالية بالبيانات الموجودة في ملف النسخة الاحتياطية. هل تود المتابعة؟'
+              : 'Warning: Current data will be replaced with the data from the backup file. Do you want to proceed?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(isArabic ? 'إلغاء' : 'Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(isArabic ? 'استعادة' : 'Restore', style: const TextStyle(color: AppColors.primary)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && context.mounted) {
+      final catProvider = context.read<CategoryProvider>();
+      final walletProvider = context.read<WalletProvider>();
+      final txProvider = context.read<TransactionProvider>();
+      final recProvider = context.read<RecurringProvider>();
+      final budgetProvider = context.read<BudgetProvider>();
+      final goalProvider = context.read<GoalProvider>();
+      final debtProvider = context.read<DebtProvider>();
+      final settings = context.read<SettingsProvider>();
+      final messenger = ScaffoldMessenger.of(context);
+
+      final result = await BackupService.restoreFromBackupFile(isArabic);
+      if (result.success) {
+        await catProvider.loadCategories();
+        await walletProvider.loadWallets(settings.currencyCode);
+        await txProvider.loadTransactions();
+        await recProvider.loadRecurring();
+        await budgetProvider.loadBudgets();
+        await goalProvider.loadGoals();
+        await debtProvider.loadDebts();
+
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(result.message),
+            backgroundColor: AppColors.income,
+          ),
+        );
+      } else {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(result.message),
+            backgroundColor: AppColors.expense,
+          ),
+        );
+      }
+    }
   }
 }

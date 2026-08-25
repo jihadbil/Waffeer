@@ -9,6 +9,7 @@ import '../../../providers/settings_provider.dart';
 import '../../../providers/transaction_provider.dart';
 import '../../widgets/category_icon_widget.dart';
 import '../../widgets/empty_state_widget.dart';
+import '../../widgets/export_bottom_sheet.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -33,10 +34,25 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final totalExpense = txProvider.monthlyExpense;
     final totalIncome = txProvider.monthlyIncome;
     final savingsRate = txProvider.monthlySavingsRate;
+    final trends = txProvider.getMonthlyTrends(6);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(isArabic ? 'الإحصائيات والتحليلات' : 'Analytics & Reports'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.ios_share_rounded),
+            tooltip: isArabic ? 'تصدير ومشاركة التقرير' : 'Export & Share Report',
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => const ExportBottomSheet(),
+              );
+            },
+          ),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -135,7 +151,93 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 22),
+
+          // 6-Month Comparison Bar Chart
+          Text(
+            isArabic ? 'مقارنة الدخل والمصاريف (آخر 6 أشهر)' : 'Income vs Expenses (Last 6 Months)',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            height: 200,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardTheme.color,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+              ),
+            ),
+            child: Column(
+              children: [
+                // Legend
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildLegendItem(color: AppColors.income, label: isArabic ? 'الدخل' : 'Income'),
+                    const SizedBox(width: 20),
+                    _buildLegendItem(color: AppColors.expense, label: isArabic ? 'المصاريف' : 'Expenses'),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceAround,
+                      borderData: FlBorderData(show: false),
+                      gridData: const FlGridData(show: false),
+                      titlesData: FlTitlesData(
+                        topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            getTitlesWidget: (val, meta) {
+                              final index = val.toInt();
+                              if (index >= 0 && index < trends.length) {
+                                final m = trends[index].month;
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 6),
+                                  child: Text(
+                                    DateFormatter.formatMonth(m, isArabic: isArabic),
+                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                                  ),
+                                );
+                              }
+                              return const SizedBox();
+                            },
+                          ),
+                        ),
+                      ),
+                      barGroups: List.generate(trends.length, (i) {
+                        final t = trends[i];
+                        return BarChartGroupData(
+                          x: i,
+                          barRods: [
+                            BarChartRodData(
+                              toY: t.income,
+                              color: AppColors.income,
+                              width: 8,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            BarChartRodData(
+                              toY: t.expense,
+                              color: AppColors.expense,
+                              width: 8,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ],
+                        );
+                      }),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
 
           // Pie Chart Section
           Text(
@@ -258,6 +360,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildLegendItem({required Color color, required String label}) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 6),
+        Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+      ],
     );
   }
 

@@ -65,6 +65,13 @@ dependencies:
   # UI Animation & Enhancements
   animations: ^2.0.11
 
+  # Media & File Picking
+  image_picker: ^1.1.2
+  file_picker: ^8.1.7
+
+  # Notifications
+  flutter_local_notifications: ^18.0.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

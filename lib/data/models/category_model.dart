@@ -32,6 +32,9 @@ class CategoryModel {
 
   String localizedName(bool isArabic) => isArabic ? nameAr : nameEn;
 
+  bool get isExpense => type == CategoryType.expense;
+  bool get isIncome => type == CategoryType.income;
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,

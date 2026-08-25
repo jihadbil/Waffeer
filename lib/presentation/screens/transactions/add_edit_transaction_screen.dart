@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/date_formatter.dart';
@@ -8,6 +10,7 @@ import '../../../providers/settings_provider.dart';
 import '../../../providers/transaction_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../widgets/category_icon_widget.dart';
+import '../../widgets/receipt_viewer_dialog.dart';
 
 class AddEditTransactionScreen extends StatefulWidget {
   final TransactionType initialType;
@@ -31,6 +34,8 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
   String? _selectedWalletId;
   String? _selectedToWalletId;
   DateTime _selectedDate = DateTime.now();
+  String? _receiptImagePath;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -65,6 +70,17 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
     _titleController.dispose();
     _noteController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickReceipt(ImageSource source) async {
+    try {
+      final pickedFile = await _picker.pickImage(source: source, imageQuality: 80);
+      if (pickedFile != null) {
+        setState(() {
+          _receiptImagePath = pickedFile.path;
+        });
+      }
+    } catch (_) {}
   }
 
   @override
@@ -209,7 +225,7 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: categories.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
                   itemBuilder: (ctx, idx) {
                     final cat = categories[idx];
                     final isSelected = cat.id == _selectedCategoryId;
@@ -271,7 +287,7 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
-              value: _selectedWalletId,
+              initialValue: _selectedWalletId,
               items: walletProvider.wallets.map((w) {
                 return DropdownMenuItem(
                   value: w.id,
@@ -299,7 +315,7 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
-                value: _selectedToWalletId,
+                initialValue: _selectedToWalletId,
                 items: walletProvider.wallets
                     .where((w) => w.id != _selectedWalletId)
                     .map((w) {
@@ -374,6 +390,90 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 20),
+
+            // Receipt Attachment Section
+            Text(
+              isArabic ? 'صورة الفاتورة أو الإيصال (اختياري)' : 'Receipt / Invoice Photo (Optional)',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            const SizedBox(height: 10),
+
+            if (_receiptImagePath != null) ...[
+              Stack(
+                children: [
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ReceiptViewerDialog(
+                            imagePath: _receiptImagePath!,
+                            title: _titleController.text.trim().isNotEmpty
+                                ? _titleController.text.trim()
+                                : (isArabic ? 'صورة الإيصال' : 'Receipt Image'),
+                          ),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      height: 160,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.primary, width: 2),
+                        image: DecorationImage(
+                          image: FileImage(File(_receiptImagePath!)),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: isArabic ? null : 8,
+                    left: isArabic ? 8 : null,
+                    child: CircleAvatar(
+                      backgroundColor: Colors.black54,
+                      radius: 18,
+                      child: IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.white, size: 18),
+                        onPressed: () => setState(() => _receiptImagePath = null),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.camera_alt_rounded),
+                      label: Text(isArabic ? 'التقاط بالكاميرا' : 'Camera'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () => _pickReceipt(ImageSource.camera),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.photo_library_rounded),
+                      label: Text(isArabic ? 'من المعرض' : 'Gallery'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () => _pickReceipt(ImageSource.gallery),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 20),
 
             // Title & Note Input
@@ -543,6 +643,7 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
       dateTime: _selectedDate,
       title: _titleController.text.trim().isNotEmpty ? _titleController.text.trim() : null,
       note: _noteController.text.trim().isNotEmpty ? _noteController.text.trim() : null,
+      receiptImagePath: _receiptImagePath,
       currencyCode: settings.currencyCode,
       walletProvider: walletProvider,
     );

@@ -138,7 +138,7 @@ class _CurrencySetupScreenState extends State<CurrencySetupScreen> {
               Expanded(
                 child: ListView.separated(
                   itemCount: filteredCurrencies.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  separatorBuilder: (_, _) => const SizedBox(height: 8),
                   itemBuilder: (ctx, index) {
                     final curr = filteredCurrencies[index];
                     final isSelected = curr.code == _selectedCode;

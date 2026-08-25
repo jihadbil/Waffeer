@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import '../../data/models/category_model.dart';
 import '../../data/models/wallet_model.dart';
 import '../../data/models/transaction_model.dart';
+import '../../data/models/recurring_transaction_model.dart';
 import '../../data/models/budget_model.dart';
 import '../../data/models/goal_model.dart';
 import '../../data/models/debt_model.dart';
@@ -25,8 +26,9 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
     );
   }
 
@@ -83,6 +85,26 @@ class DatabaseHelper {
       )
     ''');
 
+    // Recurring Transactions Table
+    await db.execute('''
+      CREATE TABLE recurring_transactions (
+        id TEXT PRIMARY KEY,
+        amount REAL NOT NULL,
+        type TEXT NOT NULL,
+        category_id TEXT NOT NULL,
+        wallet_id TEXT NOT NULL,
+        to_wallet_id TEXT,
+        title TEXT NOT NULL,
+        note TEXT,
+        frequency TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        next_due_date TEXT NOT NULL,
+        last_executed_date TEXT,
+        currency_code TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+
     // Budgets Table
     await db.execute('''
       CREATE TABLE budgets (
@@ -135,6 +157,29 @@ class DatabaseHelper {
     // Seed default categories
     for (final cat in CategoryModel.defaultCategories) {
       await db.insert('categories', cat.toMap());
+    }
+  }
+
+  Future<void> _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS recurring_transactions (
+          id TEXT PRIMARY KEY,
+          amount REAL NOT NULL,
+          type TEXT NOT NULL,
+          category_id TEXT NOT NULL,
+          wallet_id TEXT NOT NULL,
+          to_wallet_id TEXT,
+          title TEXT NOT NULL,
+          note TEXT,
+          frequency TEXT NOT NULL,
+          start_date TEXT NOT NULL,
+          next_due_date TEXT NOT NULL,
+          last_executed_date TEXT,
+          currency_code TEXT NOT NULL,
+          is_active INTEGER NOT NULL DEFAULT 1
+        )
+      ''');
     }
   }
 
@@ -203,10 +248,9 @@ class DatabaseHelper {
   Future<int> insertTransaction(TransactionModel tx) async {
     final db = await instance.database;
     return await db.transaction((txn) async {
-      // 1. Insert Transaction
-      final id = await txn.insert('transactions', tx.toMap());
+      final id = await txn.insert('transactions', tx.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
 
-      // 2. Update Wallet Balance
+      // Update Wallet Balance
       if (tx.type == TransactionType.expense) {
         await txn.rawUpdate(
           'UPDATE wallets SET current_balance = current_balance - ? WHERE id = ?',
@@ -218,12 +262,10 @@ class DatabaseHelper {
           [tx.amount, tx.walletId],
         );
       } else if (tx.type == TransactionType.transfer && tx.toWalletId != null) {
-        // Deduct from source wallet
         await txn.rawUpdate(
           'UPDATE wallets SET current_balance = current_balance - ? WHERE id = ?',
           [tx.amount, tx.walletId],
         );
-        // Add to target wallet
         await txn.rawUpdate(
           'UPDATE wallets SET current_balance = current_balance + ? WHERE id = ?',
           [tx.amount, tx.toWalletId],
@@ -260,6 +302,28 @@ class DatabaseHelper {
 
       return await txn.delete('transactions', where: 'id = ?', whereArgs: [tx.id]);
     });
+  }
+
+  // ---------------- RECURRING TRANSACTIONS CRUD ----------------
+  Future<List<RecurringTransactionModel>> getAllRecurring() async {
+    final db = await instance.database;
+    final result = await db.query('recurring_transactions', orderBy: 'next_due_date ASC');
+    return result.map((json) => RecurringTransactionModel.fromMap(json)).toList();
+  }
+
+  Future<int> insertRecurring(RecurringTransactionModel rec) async {
+    final db = await instance.database;
+    return await db.insert('recurring_transactions', rec.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<int> updateRecurring(RecurringTransactionModel rec) async {
+    final db = await instance.database;
+    return await db.update('recurring_transactions', rec.toMap(), where: 'id = ?', whereArgs: [rec.id]);
+  }
+
+  Future<int> deleteRecurring(String id) async {
+    final db = await instance.database;
+    return await db.delete('recurring_transactions', where: 'id = ?', whereArgs: [id]);
   }
 
   // ---------------- BUDGETS CRUD ----------------
@@ -326,6 +390,96 @@ class DatabaseHelper {
   Future<int> deleteDebt(String id) async {
     final db = await instance.database;
     return await db.delete('debts', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ---------------- FULL BACKUP & RESTORE ----------------
+  Future<Map<String, dynamic>> exportFullDatabase() async {
+    final db = await instance.database;
+
+    final categories = await db.query('categories');
+    final wallets = await db.query('wallets');
+    final transactions = await db.query('transactions');
+    final recurring = await db.query('recurring_transactions');
+    final budgets = await db.query('budgets');
+    final goals = await db.query('goals');
+    final debts = await db.query('debts');
+
+    return {
+      'app': 'Waffeer',
+      'version': '1.0.0',
+      'schema_version': 2,
+      'exported_at': DateTime.now().toIso8601String(),
+      'data': {
+        'categories': categories,
+        'wallets': wallets,
+        'transactions': transactions,
+        'recurring_transactions': recurring,
+        'budgets': budgets,
+        'goals': goals,
+        'debts': debts,
+      }
+    };
+  }
+
+  Future<bool> importFullDatabase(Map<String, dynamic> backupData) async {
+    final db = await instance.database;
+    final data = backupData['data'] as Map<String, dynamic>?;
+    if (data == null) return false;
+
+    return await db.transaction((txn) async {
+      // 1. Clear existing tables
+      await txn.delete('transactions');
+      await txn.delete('recurring_transactions');
+      await txn.delete('budgets');
+      await txn.delete('goals');
+      await txn.delete('debts');
+      await txn.delete('wallets');
+      await txn.delete('categories');
+
+      // 2. Import categories
+      final categories = (data['categories'] as List<dynamic>?) ?? [];
+      for (final item in categories) {
+        await txn.insert('categories', Map<String, dynamic>.from(item as Map));
+      }
+
+      // 3. Import wallets
+      final wallets = (data['wallets'] as List<dynamic>?) ?? [];
+      for (final item in wallets) {
+        await txn.insert('wallets', Map<String, dynamic>.from(item as Map));
+      }
+
+      // 4. Import transactions
+      final transactions = (data['transactions'] as List<dynamic>?) ?? [];
+      for (final item in transactions) {
+        await txn.insert('transactions', Map<String, dynamic>.from(item as Map));
+      }
+
+      // 5. Import recurring
+      final recurring = (data['recurring_transactions'] as List<dynamic>?) ?? [];
+      for (final item in recurring) {
+        await txn.insert('recurring_transactions', Map<String, dynamic>.from(item as Map));
+      }
+
+      // 6. Import budgets
+      final budgets = (data['budgets'] as List<dynamic>?) ?? [];
+      for (final item in budgets) {
+        await txn.insert('budgets', Map<String, dynamic>.from(item as Map));
+      }
+
+      // 7. Import goals
+      final goals = (data['goals'] as List<dynamic>?) ?? [];
+      for (final item in goals) {
+        await txn.insert('goals', Map<String, dynamic>.from(item as Map));
+      }
+
+      // 8. Import debts
+      final debts = (data['debts'] as List<dynamic>?) ?? [];
+      for (final item in debts) {
+        await txn.insert('debts', Map<String, dynamic>.from(item as Map));
+      }
+
+      return true;
+    });
   }
 
   Future<void> close() async {

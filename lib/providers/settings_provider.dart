@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/constants/currencies.dart';
+import '../core/services/notification_service.dart';
 
 class SettingsProvider with ChangeNotifier {
   static const String _keyThemeMode = 'theme_mode';
@@ -8,12 +9,18 @@ class SettingsProvider with ChangeNotifier {
   static const String _keyLocale = 'selected_locale';
   static const String _keyBiometrics = 'biometrics_enabled';
   static const String _keyFirstLaunch = 'is_first_launch';
+  static const String _keyReminderEnabled = 'reminder_enabled';
+  static const String _keyReminderHour = 'reminder_hour';
+  static const String _keyReminderMinute = 'reminder_minute';
 
   ThemeMode _themeMode = ThemeMode.system;
   String _currencyCode = 'USD';
   Locale _locale = const Locale('ar');
   bool _isBiometricsEnabled = false;
   bool _isFirstLaunch = true;
+  bool _isDailyReminderEnabled = true;
+  int _reminderHour = 20; // 8:00 PM
+  int _reminderMinute = 0;
   bool _isLoading = true;
 
   ThemeMode get themeMode => _themeMode;
@@ -23,6 +30,9 @@ class SettingsProvider with ChangeNotifier {
   bool get isArabic => _locale.languageCode == 'ar';
   bool get isBiometricsEnabled => _isBiometricsEnabled;
   bool get isFirstLaunch => _isFirstLaunch;
+  bool get isDailyReminderEnabled => _isDailyReminderEnabled;
+  int get reminderHour => _reminderHour;
+  int get reminderMinute => _reminderMinute;
   bool get isLoading => _isLoading;
 
   SettingsProvider() {
@@ -31,7 +41,7 @@ class SettingsProvider with ChangeNotifier {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     // Theme
     final themeStr = prefs.getString(_keyThemeMode);
     if (themeStr == 'dark') {
@@ -54,6 +64,11 @@ class SettingsProvider with ChangeNotifier {
 
     // First Launch
     _isFirstLaunch = prefs.getBool(_keyFirstLaunch) ?? true;
+
+    // Daily Reminder
+    _isDailyReminderEnabled = prefs.getBool(_keyReminderEnabled) ?? true;
+    _reminderHour = prefs.getInt(_keyReminderHour) ?? 20;
+    _reminderMinute = prefs.getInt(_keyReminderMinute) ?? 0;
 
     _isLoading = false;
     notifyListeners();
@@ -85,6 +100,40 @@ class SettingsProvider with ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyBiometrics, enabled);
+  }
+
+  Future<void> setDailyReminderEnabled(bool enabled) async {
+    _isDailyReminderEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyReminderEnabled, enabled);
+
+    if (enabled) {
+      await NotificationService.instance.scheduleDailyReminder(
+        hour: _reminderHour,
+        minute: _reminderMinute,
+        isArabic: isArabic,
+      );
+    } else {
+      await NotificationService.instance.cancelAll();
+    }
+  }
+
+  Future<void> setReminderTime(int hour, int minute) async {
+    _reminderHour = hour;
+    _reminderMinute = minute;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyReminderHour, hour);
+    await prefs.setInt(_keyReminderMinute, minute);
+
+    if (_isDailyReminderEnabled) {
+      await NotificationService.instance.scheduleDailyReminder(
+        hour: hour,
+        minute: minute,
+        isArabic: isArabic,
+      );
+    }
   }
 
   Future<void> completeFirstLaunch(String chosenCurrency) async {

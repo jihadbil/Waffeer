@@ -64,7 +64,7 @@ class _AddEditBudgetScreenState extends State<AddEditBudgetScreen> {
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<String?>(
-              value: _selectedCategoryId,
+              initialValue: _selectedCategoryId,
               items: [
                 DropdownMenuItem<String?>(
                   value: null,
@@ -94,7 +94,7 @@ class _AddEditBudgetScreenState extends State<AddEditBudgetScreen> {
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<BudgetPeriod>(
-              value: _selectedPeriod,
+              initialValue: _selectedPeriod,
               items: [
                 DropdownMenuItem(
                   value: BudgetPeriod.monthly,

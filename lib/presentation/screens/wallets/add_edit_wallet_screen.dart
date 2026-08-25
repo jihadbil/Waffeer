@@ -132,7 +132,7 @@ class _AddEditWalletScreenState extends State<AddEditWalletScreen> {
             ),
             const SizedBox(height: 8),
             DropdownButtonFormField<WalletType>(
-              value: _selectedType,
+              initialValue: _selectedType,
               items: WalletType.values.map((type) {
                 return DropdownMenuItem(
                   value: type,

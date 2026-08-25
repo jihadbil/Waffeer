@@ -5,6 +5,18 @@ class DateFormatter {
     return DateFormat('d MMM yyyy', isArabic ? 'ar' : 'en').format(date);
   }
 
+  static String formatDate(DateTime date, {bool isArabic = false}) {
+    return DateFormat('d MMM yyyy', isArabic ? 'ar' : 'en').format(date);
+  }
+
+  static String formatDateTime(DateTime date, {bool isArabic = false}) {
+    return DateFormat('d MMM yyyy, hh:mm a', isArabic ? 'ar' : 'en').format(date);
+  }
+
+  static String formatMonth(DateTime date, {bool isArabic = false}) {
+    return DateFormat('MMM', isArabic ? 'ar' : 'en').format(date);
+  }
+
   static String formatMonthYear(DateTime date, {bool isArabic = false}) {
     return DateFormat('MMMM yyyy', isArabic ? 'ar' : 'en').format(date);
   }
