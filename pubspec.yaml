@@ -67,7 +67,7 @@ dependencies:
 
   # Media & File Picking
   image_picker: ^1.1.2
-  file_picker: ^8.1.7
+  file_picker: ^10.0.0
 
   # Notifications
   flutter_local_notifications: ^18.0.1
