@@ -9,15 +9,48 @@ import '../../../providers/category_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/transaction_provider.dart';
 import '../../../providers/wallet_provider.dart';
+import '../../../core/services/receipt_scanner_service.dart';
 import '../../widgets/category_icon_widget.dart';
 import '../../widgets/receipt_viewer_dialog.dart';
+import 'receipt_scanner_screen.dart';
 
+/// شاشة إضافة أو تعديل معاملة مالية (مصروف / دخل / تحويل مالي)
+///
+/// تدعم الشاشة:
+/// 1. إدخال وتعديل المبلغ، العنوان، التصنيف، المحفظة، والتاريخ.
+/// 2. استقبال بيانات أولية مسبقة من الماسح الضوئي الذكي للفواتير [ReceiptScannerScreen].
+/// 3. ميزة المسح الذكي الفوري من داخل الشاشة لاستخراج البيانات وتعبئة الحقول آلياً.
 class AddEditTransactionScreen extends StatefulWidget {
+  /// نوع المعاملة الأولي (مصروف، دخل، أو تحويل)
   final TransactionType initialType;
+
+  /// المبلغ الأولي في حال التمرير من ماسح الفواتير
+  final double? initialAmount;
+
+  /// العنوان أو اسم المتجر الأولي
+  final String? initialTitle;
+
+  /// معرّف التصنيف المقترح الأولي
+  final String? initialCategoryId;
+
+  /// تاريخ المعاملة الأولي
+  final DateTime? initialDate;
+
+  /// مسار صورة الفاتورة المرفقة
+  final String? initialReceiptImagePath;
+
+  /// ملاحظات أولية إضافية
+  final String? initialNote;
 
   const AddEditTransactionScreen({
     super.key,
     this.initialType = TransactionType.expense,
+    this.initialAmount,
+    this.initialTitle,
+    this.initialCategoryId,
+    this.initialDate,
+    this.initialReceiptImagePath,
+    this.initialNote,
   });
 
   @override
@@ -25,7 +58,10 @@ class AddEditTransactionScreen extends StatefulWidget {
 }
 
 class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
+  // نوع المعاملة المحدد حالياً
   late TransactionType _selectedType;
+
+  // متحكمات النصوص
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
@@ -37,11 +73,37 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
   String? _receiptImagePath;
   final ImagePicker _picker = ImagePicker();
 
+  /// حالة المعالجة عند المسح الذكي للفاتورة من داخل الشاشة
+  bool _isScanning = false;
+
   @override
   void initState() {
     super.initState();
     _selectedType = widget.initialType;
 
+    // تعبئة البيانات الأولية في حال تم تمريرها من الماسح الضوئي
+    if (widget.initialAmount != null) {
+      _amountController.text = widget.initialAmount! % 1 == 0
+          ? widget.initialAmount!.toInt().toString()
+          : widget.initialAmount!.toStringAsFixed(2);
+    }
+    if (widget.initialTitle != null) {
+      _titleController.text = widget.initialTitle!;
+    }
+    if (widget.initialNote != null) {
+      _noteController.text = widget.initialNote!;
+    }
+    if (widget.initialCategoryId != null) {
+      _selectedCategoryId = widget.initialCategoryId;
+    }
+    if (widget.initialDate != null) {
+      _selectedDate = widget.initialDate!;
+    }
+    if (widget.initialReceiptImagePath != null) {
+      _receiptImagePath = widget.initialReceiptImagePath;
+    }
+
+    // تعيين المحفظة والتصنيف الافتراضيين بعد اكتمال بناء الواجهة
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final catProvider = context.read<CategoryProvider>();
       final walletProvider = context.read<WalletProvider>();
@@ -72,15 +134,95 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
     super.dispose();
   }
 
-  Future<void> _pickReceipt(ImageSource source) async {
+  /// مسح الفاتورة بالكاميرا أو المعرض واستخراج البيانات وتعبئة حقول الشاشة آلياً
+  Future<void> _scanAndAutoFill(ImageSource source) async {
     try {
-      final pickedFile = await _picker.pickImage(source: source, imageQuality: 80);
-      if (pickedFile != null) {
+      final pickedFile = await _picker.pickImage(source: source, imageQuality: 90);
+      if (pickedFile == null) return;
+
+      setState(() {
+        _isScanning = true;
+      });
+
+      final file = File(pickedFile.path);
+      // معالجة الفاتورة واستخراج البيانات
+      final parsed = await ReceiptScannerService.instance.scanReceipt(file);
+
+      if (mounted) {
+        final catProvider = context.read<CategoryProvider>();
+        final isArabic = context.read<SettingsProvider>().isArabic;
+
+        // مطابقة التصنيف المستخرج
+        String? newCatId = parsed.suggestedCategoryId;
+        if (newCatId != null) {
+          final exists = catProvider.expenseCategories.any((c) => c.id == newCatId);
+          if (!exists && catProvider.expenseCategories.isNotEmpty) {
+            newCatId = catProvider.expenseCategories.first.id;
+          }
+        }
+
+        // تحديث الحقول في الشاشة بالبيانات المستخرجة
         setState(() {
-          _receiptImagePath = pickedFile.path;
+          _isScanning = false;
+          _receiptImagePath = file.path;
+          _selectedType = TransactionType.expense;
+
+          if (parsed.totalAmount != null) {
+            _amountController.text = parsed.totalAmount! % 1 == 0
+                ? parsed.totalAmount!.toInt().toString()
+                : parsed.totalAmount!.toStringAsFixed(2);
+          }
+
+          if (parsed.merchantName != null && parsed.merchantName!.trim().isNotEmpty) {
+            _titleController.text = parsed.merchantName!.trim();
+          }
+
+          if (parsed.dateTime != null) {
+            _selectedDate = parsed.dateTime!;
+          }
+
+          if (newCatId != null) {
+            _selectedCategoryId = newCatId;
+          }
         });
+
+        // إظهار إشعار نجاح استخراج البيانات
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white, size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isArabic
+                        ? 'تم استخراج بيانات الفاتورة بنجاح: ${parsed.totalAmount != null ? "${parsed.totalAmount} " : ""}'
+                        : 'Receipt data extracted successfully!',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.income,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
-    } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+        });
+        final isArabic = context.read<SettingsProvider>().isArabic;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isArabic ? 'حدث خطأ أثناء قراءة الفاتورة' : 'Error scanning receipt',
+            ),
+            backgroundColor: AppColors.warning,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -399,7 +541,33 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
             ),
             const SizedBox(height: 10),
 
-            if (_receiptImagePath != null) ...[
+            if (_isScanning) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: isDark ? 0.12 : 0.08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: CircularProgressIndicator(strokeWidth: 3, color: AppColors.primary),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      isArabic
+                          ? 'جاري مسح الفاتورة واستخراج البيانات الذكية...'
+                          : 'Scanning receipt & extracting data...',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (_receiptImagePath != null) ...[
               Stack(
                 children: [
                   InkWell(
@@ -446,32 +614,73 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
                 ],
               ),
             ] else ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.camera_alt_rounded),
-                      label: Text(isArabic ? 'التقاط بالكاميرا' : 'Camera'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      onPressed: () => _pickReceipt(ImageSource.camera),
-                    ),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.darkCard : const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.photo_library_rounded),
-                      label: Text(isArabic ? 'من المعرض' : 'Gallery'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Column(
+                  children: [
+                    // Smart AI Scan Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.auto_awesome_rounded, size: 18),
+                        label: Text(
+                          isArabic ? 'مسح الفاتورة واستخراج البيانات الذكي (AI)' : 'Smart AI Receipt Scan',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ReceiptScannerScreen(),
+                            ),
+                          );
+                        },
                       ),
-                      onPressed: () => _pickReceipt(ImageSource.gallery),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.camera_alt_rounded, size: 18),
+                            label: Text(isArabic ? 'تصوير فوري' : 'Snap & Auto-fill'),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onPressed: () => _scanAndAutoFill(ImageSource.camera),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.photo_library_rounded, size: 18),
+                            label: Text(isArabic ? 'من الاستوديو' : 'From Gallery'),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            onPressed: () => _scanAndAutoFill(ImageSource.gallery),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ],
             const SizedBox(height: 20),

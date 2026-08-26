@@ -12,6 +12,7 @@ import '../../widgets/quick_action_button.dart';
 import '../../widgets/transaction_tile.dart';
 import '../budgets/budgets_screen.dart';
 import '../transactions/add_edit_transaction_screen.dart';
+import '../transactions/receipt_scanner_screen.dart';
 import '../transactions/transactions_list_screen.dart';
 import '../wallets/wallets_screen.dart';
 
@@ -25,6 +26,7 @@ class DashboardScreen extends StatelessWidget {
     final walletProvider = context.watch<WalletProvider>();
     final txProvider = context.watch<TransactionProvider>();
     final budgetProvider = context.watch<BudgetProvider>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     final recentTransactions = txProvider.recentTransactions;
     final totalBalance = walletProvider.totalBalance;
@@ -79,6 +81,16 @@ class DashboardScreen extends StatelessWidget {
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.document_scanner_outlined),
+            tooltip: isArabic ? 'مسح فاتورة' : 'Scan Receipt',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ReceiptScannerScreen()),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.account_balance_wallet_outlined),
             tooltip: isArabic ? 'المحافظ' : 'Wallets',
             onPressed: () {
@@ -113,7 +125,67 @@ class DashboardScreen extends StatelessWidget {
                 );
               },
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
+
+            // Smart Receipt Scanner Banner
+            InkWell(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ReceiptScannerScreen()),
+                );
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: isDark
+                        ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
+                        : [AppColors.primary.withValues(alpha: 0.09), const Color(0xFFF1F5F9)],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: isDark ? 0.3 : 0.25),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isArabic ? 'مسح الفواتير بالكاميرا (OCR)' : 'Scan Receipts with AI Camera',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          ),
+                          Text(
+                            isArabic
+                                ? 'التقط فاتورتك وسجل مصروفك وتصنيفه تلقائياً'
+                                : 'Snap a receipt to auto-record your expense',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(context).textTheme.bodySmall?.color,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.primary),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
 
             // 2. Budget Alert Banner (if any)
             if (warningBudgets.isNotEmpty) ...[

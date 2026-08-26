@@ -9,6 +9,7 @@ import '../../widgets/empty_state_widget.dart';
 import '../../widgets/filter_bottom_sheet.dart';
 import '../../widgets/transaction_tile.dart';
 import 'add_edit_transaction_screen.dart';
+import 'receipt_scanner_screen.dart';
 
 class TransactionsListScreen extends StatefulWidget {
   const TransactionsListScreen({super.key});
@@ -58,6 +59,16 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
               )
             : Text(isArabic ? 'سجل المعاملات' : 'Transactions History'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.document_scanner_outlined),
+            tooltip: isArabic ? 'مسح فاتورة' : 'Scan Receipt',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ReceiptScannerScreen()),
+              );
+            },
+          ),
           IconButton(
             icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded),
             onPressed: () {
