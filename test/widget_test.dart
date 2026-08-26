@@ -1,30 +1,38 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:waffeer/core/services/receipt_scanner_service.dart';
+import 'package:waffeer/data/models/receipt_model.dart';
 
-import 'package:waffeer/main.dart';
-
+/// اختبارات نموذج الفاتورة ParsedReceipt وعمليات الاستخراج الأساسية
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const WaffeerApp());
+  // 1. اختبار تهيئة نموذج الفاتورة والخصائص المشتقة
+  test('ParsedReceipt model instantiates and properties work', () {
+    const receipt = ParsedReceipt(
+      imagePath: '/test/image.jpg',
+      totalAmount: 150.75,
+      merchantName: 'Al Baik',
+      suggestedCategoryId: 'cat_food',
+      confidenceScore: 0.9,
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(receipt.hasExtractedAmount, isTrue);
+    expect(receipt.hasExtractedMerchant, isTrue);
+    expect(receipt.totalAmount, equals(150.75));
+    expect(receipt.merchantName, equals('Al Baik'));
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  // 2. اختبار كشف المبلغ والتاريخ مع نصوص العملات
+  test('ReceiptScannerService detects total with currency text', () {
+    final service = ReceiptScannerService.instance;
+    const text = 'المجموع الكلي: 240.00 ر.س\nتاريخ: 2025/01/01';
+    final lines = text.split('\n');
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    final parsed = service.parseReceiptText(
+      rawText: text,
+      lines: lines,
+      imagePath: '/test/receipt.jpg',
+    );
+
+    expect(parsed.totalAmount, equals(240.00));
+    expect(parsed.dateTime?.year, equals(2025));
   });
 }
