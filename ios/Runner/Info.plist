@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>يحتاج تطبيق وفير إلى الكاميرا لمسح الفواتير والإيصالات واستخراج البيانات تلقائياً</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>يحتاج تطبيق وفير إلى الوصول لمكتبة الصور لاختيار صور الفواتير واستخراج البيانات</string>
 </dict>
 </plist>
