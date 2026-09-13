@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import '../../../core/constants/app_colors.dart';
 import '../../../providers/security_provider.dart';
 import '../../../providers/settings_provider.dart';
@@ -11,11 +13,7 @@ class LockScreen extends StatefulWidget {
   final LockMode mode;
   final VoidCallback? onUnlocked;
 
-  const LockScreen({
-    super.key,
-    this.mode = LockMode.unlock,
-    this.onUnlocked,
-  });
+  const LockScreen({super.key, this.mode = LockMode.unlock, this.onUnlocked});
 
   @override
   State<LockScreen> createState() => _LockScreenState();
@@ -26,6 +24,8 @@ class _LockScreenState extends State<LockScreen> {
   String _confirmPin = '';
   bool _isConfirming = false;
   String _errorMessage = '';
+  int _lockoutSeconds = 0;
+  Timer? _lockoutTimer;
 
   @override
   void initState() {
@@ -33,15 +33,60 @@ class _LockScreenState extends State<LockScreen> {
     if (widget.mode == LockMode.unlock) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _tryBiometrics();
+        _checkLockout();
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _lockoutTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkLockout() async {
+    final secProvider = context.read<SecurityProvider>();
+    final remaining = await secProvider.getRemainingLockoutSeconds();
+    if (remaining > 0 && mounted) {
+      setState(() {
+        _lockoutSeconds = remaining;
+        _errorMessage = context.read<SettingsProvider>().isArabic
+            ? 'تم حظر المحاولات مؤقتاً. يرجى الانتظار $_lockoutSeconds ثانية.'
+            : 'Too many failed attempts. Try again in $_lockoutSeconds s.';
+      });
+      _startLockoutTimer();
+    }
+  }
+
+  void _startLockoutTimer() {
+    _lockoutTimer?.cancel();
+    _lockoutTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        if (_lockoutSeconds > 1) {
+          _lockoutSeconds--;
+          _errorMessage = context.read<SettingsProvider>().isArabic
+              ? 'تم حظر المحاولات مؤقتاً. يرجى الانتظار $_lockoutSeconds ثانية.'
+              : 'Too many failed attempts. Try again in $_lockoutSeconds s.';
+        } else {
+          _lockoutSeconds = 0;
+          _errorMessage = '';
+          timer.cancel();
+        }
+      });
+    });
   }
 
   Future<void> _tryBiometrics() async {
     final secProvider = context.read<SecurityProvider>();
     final settings = context.read<SettingsProvider>();
     if (secProvider.isBiometricsEnabled) {
-      final success = await secProvider.tryUnlockWithBiometrics(settings.isArabic);
+      final success = await secProvider.tryUnlockWithBiometrics(
+        settings.isArabic,
+      );
       if (success && mounted) {
         widget.onUnlocked?.call();
       }
@@ -49,6 +94,7 @@ class _LockScreenState extends State<LockScreen> {
   }
 
   void _onKeyPress(String val) {
+    if (_lockoutSeconds > 0) return;
     if (_enteredPin.length < 4) {
       HapticFeedback.lightImpact();
       setState(() {
@@ -63,6 +109,7 @@ class _LockScreenState extends State<LockScreen> {
   }
 
   void _onBackspace() {
+    if (_lockoutSeconds > 0) return;
     if (_enteredPin.isNotEmpty) {
       HapticFeedback.lightImpact();
       setState(() {
@@ -73,6 +120,10 @@ class _LockScreenState extends State<LockScreen> {
   }
 
   Future<void> _handlePinComplete() async {
+    // Delay slightly to let the 4th dot complete its fill animation
+    await Future.delayed(const Duration(milliseconds: 200));
+    if (!mounted) return;
+
     final secProvider = context.read<SecurityProvider>();
     final settings = context.read<SettingsProvider>();
     final isArabic = settings.isArabic;
@@ -87,9 +138,14 @@ class _LockScreenState extends State<LockScreen> {
       } else {
         HapticFeedback.heavyImpact();
         setState(() {
-          _errorMessage = isArabic ? 'رمز PIN غير صحيح!' : 'Incorrect PIN!';
           _enteredPin = '';
         });
+        await _checkLockout();
+        if (_lockoutSeconds == 0 && mounted) {
+          setState(() {
+            _errorMessage = isArabic ? 'رمز PIN غير صحيح!' : 'Incorrect PIN!';
+          });
+        }
       }
     } else {
       // Setup PIN mode
@@ -105,7 +161,9 @@ class _LockScreenState extends State<LockScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(isArabic ? 'تم تفعيل رمز PIN بنجاح' : 'PIN setup successful'),
+                content: Text(
+                  isArabic ? 'تم تفعيل رمز PIN بنجاح' : 'PIN setup successful',
+                ),
                 backgroundColor: AppColors.income,
               ),
             );
@@ -114,7 +172,9 @@ class _LockScreenState extends State<LockScreen> {
         } else {
           HapticFeedback.heavyImpact();
           setState(() {
-            _errorMessage = isArabic ? 'الرمزان غير متطابقين، حاول مجدداً' : 'PINs do not match, try again';
+            _errorMessage = isArabic
+                ? 'الرمزان غير متطابقين، حاول مجدداً'
+                : 'PINs do not match, try again';
             _enteredPin = '';
             _confirmPin = '';
             _isConfirming = false;
@@ -133,15 +193,21 @@ class _LockScreenState extends State<LockScreen> {
 
     String promptText;
     if (widget.mode == LockMode.unlock) {
-      promptText = isArabic ? 'أدخل رمز PIN لفتح التطبيق' : 'Enter PIN to unlock Waffeer';
+      promptText = isArabic
+          ? 'أدخل رمز PIN لفتح التطبيق'
+          : 'Enter PIN to unlock Waffeer';
     } else {
       promptText = _isConfirming
           ? (isArabic ? 'تأكيد رمز PIN الجديد' : 'Confirm new PIN')
-          : (isArabic ? 'أدخل رمز PIN جديد (4 أرقام)' : 'Enter new 4-digit PIN');
+          : (isArabic
+                ? 'أدخل رمز PIN جديد (4 أرقام)'
+                : 'Enter new 4-digit PIN');
     }
 
     return Scaffold(
-      backgroundColor: isDark ? AppColors.darkBackground : AppColors.lightBackground,
+      backgroundColor: isDark
+          ? AppColors.darkBackground
+          : AppColors.lightBackground,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -168,7 +234,10 @@ class _LockScreenState extends State<LockScreen> {
               // Title
               Text(
                 isArabic ? 'وفير • الحماية والخصوصية' : 'Waffeer • App Lock',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
               ),
               const SizedBox(height: 8),
 
@@ -198,7 +267,9 @@ class _LockScreenState extends State<LockScreen> {
                       border: Border.all(
                         color: isFilled
                             ? AppColors.primary
-                            : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                            : (isDark
+                                  ? AppColors.darkBorder
+                                  : AppColors.lightBorder),
                         width: 2,
                       ),
                     ),
@@ -211,7 +282,11 @@ class _LockScreenState extends State<LockScreen> {
               if (_errorMessage.isNotEmpty)
                 Text(
                   _errorMessage,
-                  style: const TextStyle(color: AppColors.expense, fontWeight: FontWeight.bold, fontSize: 13),
+                  style: const TextStyle(
+                    color: AppColors.expense,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
                 )
               else
                 const SizedBox(height: 18),
@@ -228,7 +303,11 @@ class _LockScreenState extends State<LockScreen> {
     );
   }
 
-  Widget _buildKeypad(BuildContext context, SecurityProvider secProvider, bool isArabic) {
+  Widget _buildKeypad(
+    BuildContext context,
+    SecurityProvider secProvider,
+    bool isArabic,
+  ) {
     return Column(
       children: [
         _buildKeyRow(['1', '2', '3']),
@@ -241,7 +320,8 @@ class _LockScreenState extends State<LockScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             // Biometric button (if available) or Cancel
-            if (widget.mode == LockMode.unlock && secProvider.isBiometricsEnabled)
+            if (widget.mode == LockMode.unlock &&
+                secProvider.isBiometricsEnabled)
               _buildActionButton(
                 icon: Icons.fingerprint_rounded,
                 onTap: _tryBiometrics,

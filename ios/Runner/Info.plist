@@ -70,5 +70,7 @@
 	<string>يحتاج تطبيق وفير إلى الكاميرا لمسح الفواتير والإيصالات واستخراج البيانات تلقائياً</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>يحتاج تطبيق وفير إلى الوصول لمكتبة الصور لاختيار صور الفواتير واستخراج البيانات</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>يحتاج تطبيق وفير إلى بصمة الوجه لتأمين بياناتك المالية وفتح التطبيق بأمان</string>
 </dict>
 </plist>

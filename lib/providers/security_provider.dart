@@ -22,6 +22,12 @@ class SecurityProvider extends ChangeNotifier {
     _isBiometricsEnabled = await _securityService.isBiometricsEnabled();
     _hasPin = await _securityService.hasPin();
 
+    // Prevent lockout: biometrics requires a valid PIN as fallback
+    if (_isBiometricsEnabled && !_hasPin) {
+      _isBiometricsEnabled = false;
+      await _securityService.setBiometricsEnabled(false);
+    }
+
     if (isSecurityActive) {
       _isLocked = true;
     } else {
@@ -65,6 +71,11 @@ class SecurityProvider extends ChangeNotifier {
     return false;
   }
 
+  Future<bool> isLockedOut() => _securityService.isLockedOut();
+
+  Future<int> getRemainingLockoutSeconds() =>
+      _securityService.getRemainingLockoutSeconds();
+
   Future<void> setPin(String pin) async {
     await _securityService.savePin(pin);
     _hasPin = true;
@@ -76,13 +87,21 @@ class SecurityProvider extends ChangeNotifier {
     await _securityService.removePin();
     _hasPin = false;
     _isPinEnabled = false;
+    if (_isBiometricsEnabled) {
+      await _securityService.setBiometricsEnabled(false);
+      _isBiometricsEnabled = false;
+    }
     notifyListeners();
   }
 
-  Future<void> setBiometricsEnabled(bool enabled) async {
+  Future<bool> setBiometricsEnabled(bool enabled) async {
+    if (enabled && !_hasPin) {
+      return false;
+    }
     await _securityService.setBiometricsEnabled(enabled);
     _isBiometricsEnabled = enabled;
     notifyListeners();
+    return true;
   }
 
   Future<void> setPinEnabled(bool enabled) async {
