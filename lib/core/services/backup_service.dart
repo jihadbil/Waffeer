@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+
 import '../database/db_helper.dart';
 
 class BackupResult {
@@ -10,7 +12,11 @@ class BackupResult {
   final String message;
   final String? filePath;
 
-  const BackupResult({required this.success, required this.message, this.filePath});
+  const BackupResult({
+    required this.success,
+    required this.message,
+    this.filePath,
+  });
 }
 
 class BackupService {
@@ -22,7 +28,11 @@ class BackupService {
 
       final jsonString = const JsonEncoder.withIndent('  ').convert(fullData);
       final tempDir = await getTemporaryDirectory();
-      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
+      final timestamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .split('.')
+          .first;
       final fileName = 'Waffeer_Backup_$timestamp.wafbackup';
       final file = File('${tempDir.path}/$fileName');
 
@@ -30,18 +40,24 @@ class BackupService {
 
       await Share.shareXFiles(
         [XFile(file.path)],
-        text: isArabic ? 'نسخة احتياطية لتطبيق وفير' : 'Waffeer Finance App Backup',
+        text: isArabic
+            ? 'نسخة احتياطية لتطبيق وفير'
+            : 'Waffeer Finance App Backup',
       );
 
       return BackupResult(
         success: true,
-        message: isArabic ? 'تم إنشاء النسخة الاحتياطية بنجاح' : 'Backup created successfully',
+        message: isArabic
+            ? 'تم إنشاء النسخة الاحتياطية بنجاح'
+            : 'Backup created successfully',
         filePath: file.path,
       );
     } catch (e) {
       return BackupResult(
         success: false,
-        message: isArabic ? 'فشل إنشاء النسخة الاحتياطية: $e' : 'Failed to create backup: $e',
+        message: isArabic
+            ? 'فشل إنشاء النسخة الاحتياطية: $e'
+            : 'Failed to create backup: $e',
       );
     }
   }
@@ -74,23 +90,31 @@ class BackupService {
         );
       }
 
-      final success = await DatabaseHelper.instance.importFullDatabase(backupData);
+      final success = await DatabaseHelper.instance.importFullDatabase(
+        backupData,
+      );
 
       if (success) {
         return BackupResult(
           success: true,
-          message: isArabic ? 'تمت استعادة البيانات بنجاح!' : 'Data restored successfully!',
+          message: isArabic
+              ? 'تمت استعادة البيانات بنجاح!'
+              : 'Data restored successfully!',
         );
       } else {
         return BackupResult(
           success: false,
-          message: isArabic ? 'فشل استيراد البيانات إلى قاعدة البيانات' : 'Failed to import data into database',
+          message: isArabic
+              ? 'فشل استيراد البيانات إلى قاعدة البيانات'
+              : 'Failed to import data into database',
         );
       }
     } catch (e) {
       return BackupResult(
         success: false,
-        message: isArabic ? 'حدث خطأ أثناء الاستعادة: $e' : 'Error during restore: $e',
+        message: isArabic
+            ? 'حدث خطأ أثناء الاستعادة: $e'
+            : 'Error during restore: $e',
       );
     }
   }

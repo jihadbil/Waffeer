@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+
 import '../../core/database/db_helper.dart';
 import '../../data/models/debt_model.dart';
 
 class DebtProvider with ChangeNotifier {
-  final DatabaseHelper _dbHelper = DatabaseHelper.instance;
+  final DatabaseHelper _dbHelper;
+  DebtProvider({DatabaseHelper? database})
+    : _dbHelper = database ?? DatabaseHelper.instance;
   List<DebtModel> _debts = [];
   bool _isLoading = true;
 
@@ -16,11 +19,13 @@ class DebtProvider with ChangeNotifier {
   List<DebtModel> get borrowedDebts =>
       _debts.where((d) => d.type == DebtType.borrow).toList();
 
-  double get totalLentRemaining =>
-      lentDebts.where((d) => !d.isSettled).fold(0.0, (sum, d) => sum + d.remainingAmount);
+  double get totalLentRemaining => lentDebts
+      .where((d) => !d.isSettled)
+      .fold(0.0, (sum, d) => sum + d.remainingAmount);
 
-  double get totalBorrowedRemaining =>
-      borrowedDebts.where((d) => !d.isSettled).fold(0.0, (sum, d) => sum + d.remainingAmount);
+  double get totalBorrowedRemaining => borrowedDebts
+      .where((d) => !d.isSettled)
+      .fold(0.0, (sum, d) => sum + d.remainingAmount);
 
   Future<void> loadDebts() async {
     _isLoading = true;

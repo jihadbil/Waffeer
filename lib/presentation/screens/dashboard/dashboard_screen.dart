@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/currency_formatter.dart';
 import '../../../data/models/transaction_model.dart';
 import '../../../providers/budget_provider.dart';
+import '../../../providers/routine_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/transaction_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../widgets/balance_card.dart';
-import '../../widgets/empty_state_widget.dart';
-import '../../widgets/quick_action_button.dart';
+import '../../widgets/routine_expenses_carousel.dart';
+import '../../widgets/smart_expense_sheet.dart';
 import '../../widgets/transaction_tile.dart';
 import '../budgets/budgets_screen.dart';
+import '../settings/settings_screen.dart';
 import '../transactions/add_edit_transaction_screen.dart';
 import '../transactions/receipt_scanner_screen.dart';
 import '../transactions/transactions_list_screen.dart';
@@ -18,332 +22,246 @@ import '../wallets/wallets_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
-
+  void _open(BuildContext context, Widget screen) =>
+      Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
-    final isArabic = settings.isArabic;
-    final walletProvider = context.watch<WalletProvider>();
-    final txProvider = context.watch<TransactionProvider>();
-    final budgetProvider = context.watch<BudgetProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final recentTransactions = txProvider.recentTransactions;
-    final totalBalance = walletProvider.totalBalance;
-    final monthlyExpense = txProvider.monthlyExpense;
-    final monthlyIncome = txProvider.monthlyIncome;
-
-    // Check if any budget is exceeded or near limit
-    final warningBudgets = budgetProvider.budgets.where((b) {
-      return budgetProvider.isExceeded(b, txProvider.transactions) ||
-          budgetProvider.isNearLimit(b, txProvider.transactions);
-    }).toList();
-
+    final ar = settings.isArabic;
+    final wallets = context.watch<WalletProvider>();
+    final tx = context.watch<TransactionProvider>();
+    final budgets = context.watch<BudgetProvider>();
+    final colors = Theme.of(context).colorScheme;
+    final warnings = budgets.budgets
+        .where(
+          (b) =>
+              budgets.isExceeded(b, tx.transactions) ||
+              budgets.isNearLimit(b, tx.transactions),
+        )
+        .length;
+    final now = DateTime.now();
+    final remaining = DateTime(now.year, now.month + 1, 0).day - now.day + 1;
+    final available =
+        (tx.monthlyIncome > 0
+                ? tx.monthlyIncome - tx.monthlyExpense
+                : wallets.totalBalance)
+            .clamp(0.0, double.infinity) /
+        remaining;
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.account_balance_wallet_rounded,
-                color: AppColors.primary,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isArabic ? 'وفير' : 'Waffeer',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                ),
-                Text(
-                  isArabic ? 'إدارة المصاريف الذكية' : 'Smart Personal Finance',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Theme.of(context).textTheme.bodyMedium?.color,
-                    fontWeight: FontWeight.normal,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+        title: Text(ar ? 'وفير' : 'Waffeer'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.document_scanner_outlined),
-            tooltip: isArabic ? 'مسح فاتورة' : 'Scan Receipt',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ReceiptScannerScreen()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.account_balance_wallet_outlined),
-            tooltip: isArabic ? 'المحافظ' : 'Wallets',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const WalletsScreen()),
-              );
-            },
+            tooltip: ar ? 'الإعدادات' : 'Settings',
+            onPressed: () => _open(context, const SettingsScreen()),
+            icon: const Icon(Icons.settings_outlined),
           ),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          await walletProvider.loadWallets(settings.currencyCode);
-          await txProvider.loadTransactions();
-          await budgetProvider.loadBudgets();
+          final routine = context.read<RoutineProvider>();
+          try {
+            await budgets.loadBudgets();
+            await routine.processAutoRecurringDue(
+              txProvider: tx,
+              walletProvider: wallets,
+            );
+            await routine.syncReminders(ar);
+          } catch (_) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    ar
+                        ? 'تعذر التحديث. حاول مجدداً.'
+                        : 'Refresh failed. Try again.',
+                  ),
+                ),
+              );
+            }
+          }
         },
         child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
           children: [
-            // 1. Hero Balance Card
             BalanceCard(
-              totalBalance: totalBalance,
-              monthlyIncome: monthlyIncome,
-              monthlyExpense: monthlyExpense,
+              totalBalance: wallets.totalBalance,
+              monthlyIncome: tx.monthlyIncome,
+              monthlyExpense: tx.monthlyExpense,
               currencyCode: settings.currencyCode,
-              isArabic: isArabic,
-              onManageWallets: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const WalletsScreen()),
-                );
-              },
+              isArabic: ar,
+              onManageWallets: () => _open(context, const WalletsScreen()),
             ),
-            const SizedBox(height: 14),
-
-            // Smart Receipt Scanner Banner
-            InkWell(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ReceiptScannerScreen()),
-                );
-              },
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: isDark
-                        ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
-                        : [AppColors.primary.withValues(alpha: 0.09), const Color(0xFFF1F5F9)],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: AppColors.primary.withValues(alpha: isDark ? 0.3 : 0.25),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 20),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.today_outlined, color: colors.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      ar
+                          ? 'المتاح اليوم حتى نهاية الشهر'
+                          : 'Available today through month end',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isArabic ? 'مسح الفواتير بالكاميرا (OCR)' : 'Scan Receipts with AI Camera',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                          ),
-                          Text(
-                            isArabic
-                                ? 'التقط فاتورتك وسجل مصروفك وتصنيفه تلقائياً'
-                                : 'Snap a receipt to auto-record your expense',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Theme.of(context).textTheme.bodySmall?.color,
-                            ),
-                          ),
-                        ],
-                      ),
+                  ),
+                  Text(
+                    CurrencyFormatter.format(
+                      available,
+                      currencyCode: settings.currencyCode,
+                      isArabic: ar,
                     ),
-                    const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.primary),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 14),
-
-            // 2. Budget Alert Banner (if any)
-            if (warningBudgets.isNotEmpty) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.warning.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 24),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        isArabic
-                            ? 'تنبيه: اقتربت أو تجاوزت إحدى الميزانيات المحددة لشهرك الحالي!'
-                            : 'Alert: You are near or exceeded one of your active budgets!',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.warning,
-                        ),
+            const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => SmartExpenseSheet.show(context),
+                    icon: const Icon(Icons.auto_awesome, size: 16),
+                    label: Text(ar ? 'تسجيل ذكي ✨' : 'Smart Add ✨'),
+                  ),
+                  FilledButton.tonalIcon(
+                    onPressed: () => _open(
+                      context,
+                      const AddEditTransactionScreen(
+                        initialType: TransactionType.expense,
                       ),
                     ),
-                    TextButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const BudgetsScreen()),
-                        );
-                      },
-                      child: Text(
-                        isArabic ? 'عرض' : 'View',
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.warning),
+                    icon: const Icon(Icons.remove),
+                    label: Text(ar ? 'مصروف' : 'Expense'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _open(
+                      context,
+                      const AddEditTransactionScreen(
+                        initialType: TransactionType.income,
                       ),
                     ),
-                  ],
+                    icon: const Icon(Icons.add),
+                    label: Text(ar ? 'دخل' : 'Income'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _open(
+                      context,
+                      const AddEditTransactionScreen(
+                        initialType: TransactionType.transfer,
+                      ),
+                    ),
+                    icon: const Icon(Icons.swap_horiz),
+                    label: Text(ar ? 'تحويل' : 'Transfer'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () => _open(context, const ReceiptScannerScreen()),
+                    icon: const Icon(Icons.document_scanner_outlined),
+                    label: Text(ar ? 'مسح فاتورة' : 'Scan receipt'),
+                  ),
+                ],
+              ),
+            if (warnings > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: ListTile(
+                  leading: Icon(Icons.info_outline, color: colors.error),
+                  title: Text(
+                    ar
+                        ? '$warnings ميزانيات تحتاج مراجعة'
+                        : '$warnings budgets need attention',
+                  ),
+                  onTap: () => _open(context, const BudgetsScreen()),
                 ),
               ),
-              const SizedBox(height: 18),
-            ],
-
-            // 3. Quick Action Shortcuts
+            const SizedBox(height: 20),
+            const RoutineExpensesCarousel(),
+            const SizedBox(height: 20),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                QuickActionButton(
-                  icon: Icons.add_circle_outline_rounded,
-                  label: isArabic ? 'إضافة مصروف' : 'Add Expense',
-                  color: AppColors.expense,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AddEditTransactionScreen(
-                          initialType: TransactionType.expense,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                QuickActionButton(
-                  icon: Icons.arrow_downward_rounded,
-                  label: isArabic ? 'إضافة دخل' : 'Add Income',
-                  color: AppColors.income,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AddEditTransactionScreen(
-                          initialType: TransactionType.income,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                QuickActionButton(
-                  icon: Icons.swap_horiz_rounded,
-                  label: isArabic ? 'تحويل مالي' : 'Transfer',
-                  color: AppColors.transfer,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AddEditTransactionScreen(
-                          initialType: TransactionType.transfer,
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                QuickActionButton(
-                  icon: Icons.pie_chart_rounded,
-                  label: isArabic ? 'الميزانيات' : 'Budgets',
-                  color: const Color(0xFF8B5CF6),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const BudgetsScreen()),
-                    );
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            // 4. Recent Transactions Header & List
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  isArabic ? 'آخر المعاملات' : 'Recent Transactions',
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Text(
+                    ar ? 'آخر التسجيلات' : 'Recent entries',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
                 TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const TransactionsListScreen()),
-                    );
-                  },
-                  child: Text(
-                    isArabic ? 'عرض الكل' : 'View All',
-                    style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
-                  ),
+                  onPressed: () =>
+                      _open(context, const TransactionsListScreen()),
+                  child: Text(ar ? 'عرض الكل' : 'View all'),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-
-            if (recentTransactions.isEmpty)
-              EmptyStateWidget(
-                icon: Icons.receipt_long_outlined,
-                title: isArabic ? 'لا توجد حركات مسجلة بعد' : 'No transactions recorded yet',
-                subtitle: isArabic
-                    ? 'سجل مصاريفك اليومية ومداخيلك لتبدأ في تتبع أموالك'
-                    : 'Start adding your daily expenses & income to track your cashflow',
-                actionLabel: isArabic ? 'إضافة أول معاملة' : 'Add First Transaction',
-                onAction: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AddEditTransactionScreen()),
-                  );
+            if (tx.recentTransactions.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  ar
+                      ? 'سجّل أول معاملة لتبدأ متابعة أموالك.'
+                      : 'Record your first entry to start tracking your money.',
+                ),
+              ),
+            ...tx.recentTransactions.map(
+              (item) => TransactionTile(
+                transaction: item,
+                onTap: () =>
+                    _open(context, AddEditTransactionScreen(transaction: item)),
+                onDelete: () async {
+                  final routine = context.read<RoutineProvider>();
+                  final messenger = ScaffoldMessenger.of(context);
+                  try {
+                    await tx.deleteTransaction(item, walletProvider: wallets);
+                    await routine.loadRoutines();
+                    await routine.syncReminders(ar);
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text(ar ? 'تم حذف المعاملة' : 'Entry deleted'),
+                        action: SnackBarAction(
+                          label: ar ? 'تراجع' : 'Undo',
+                          onPressed: () async {
+                            try {
+                              await tx.restoreTransaction(
+                                item,
+                                walletProvider: wallets,
+                              );
+                              await routine.loadRoutines();
+                              await routine.syncReminders(ar);
+                            } catch (_) {
+                              messenger.showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    ar
+                                        ? 'تعذر استعادة المعاملة'
+                                        : 'Could not restore entry',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      ),
+                    );
+                  } catch (_) {
+                    await tx.loadTransactions();
+                    messenger.showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          ar ? 'تعذر حذف المعاملة' : 'Could not delete entry',
+                        ),
+                      ),
+                    );
+                  }
                 },
-              )
-            else
-              ...recentTransactions.map((tx) {
-                return TransactionTile(
-                  transaction: tx,
-                  onDelete: () async {
-                    await txProvider.deleteTransaction(tx, walletProvider: walletProvider);
-                  },
-                );
-              }),
-
-            const SizedBox(height: 20),
+              ),
+            ),
           ],
         ),
       ),

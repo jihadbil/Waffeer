@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../core/utils/date_formatter.dart';
 import '../../data/models/transaction_model.dart';
@@ -55,7 +56,9 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
       decoration: BoxDecoration(
         color: Theme.of(context).scaffoldBackgroundColor,
@@ -70,7 +73,10 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             children: [
               Text(
                 isArabic ? 'فلترة وتصفية المعاملات' : 'Filter Transactions',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               TextButton(
                 onPressed: () {
@@ -79,7 +85,10 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                 },
                 child: Text(
                   isArabic ? 'إعادة ضبط' : 'Reset',
-                  style: const TextStyle(color: AppColors.expense, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    color: AppColors.expense,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -92,7 +101,10 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                 // Transaction Type Chips
                 Text(
                   isArabic ? 'نوع المعاملة' : 'Transaction Type',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -107,19 +119,22 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                       label: Text(isArabic ? 'مصروف' : 'Expense'),
                       selected: _type == TransactionType.expense,
                       selectedColor: AppColors.expense.withValues(alpha: 0.2),
-                      onSelected: (_) => setState(() => _type = TransactionType.expense),
+                      onSelected: (_) =>
+                          setState(() => _type = TransactionType.expense),
                     ),
                     ChoiceChip(
                       label: Text(isArabic ? 'دخل' : 'Income'),
                       selected: _type == TransactionType.income,
                       selectedColor: AppColors.income.withValues(alpha: 0.2),
-                      onSelected: (_) => setState(() => _type = TransactionType.income),
+                      onSelected: (_) =>
+                          setState(() => _type = TransactionType.income),
                     ),
                     ChoiceChip(
                       label: Text(isArabic ? 'تحويل' : 'Transfer'),
                       selected: _type == TransactionType.transfer,
                       selectedColor: AppColors.transfer.withValues(alpha: 0.2),
-                      onSelected: (_) => setState(() => _type = TransactionType.transfer),
+                      onSelected: (_) =>
+                          setState(() => _type = TransactionType.transfer),
                     ),
                   ],
                 ),
@@ -128,7 +143,10 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                 // Custom Date Range Picker
                 Text(
                   isArabic ? 'نطاق التاريخ' : 'Date Range',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 InkWell(
@@ -137,9 +155,12 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                       context: context,
                       firstDate: DateTime(2020),
                       lastDate: DateTime(2035),
-                      initialDateRange: _dateRange ??
+                      initialDateRange:
+                          _dateRange ??
                           DateTimeRange(
-                            start: DateTime.now().subtract(const Duration(days: 30)),
+                            start: DateTime.now().subtract(
+                              const Duration(days: 30),
+                            ),
                             end: DateTime.now(),
                           ),
                     );
@@ -149,26 +170,41 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                   },
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
                     decoration: BoxDecoration(
                       color: Theme.of(context).cardTheme.color,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                      border: Border.all(
+                        color: isDark
+                            ? AppColors.darkBorder
+                            : AppColors.lightBorder,
+                      ),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.calendar_month_rounded, size: 20, color: AppColors.primary),
+                            const Icon(
+                              Icons.calendar_month_rounded,
+                              size: 20,
+                              color: AppColors.primary,
+                            ),
                             const SizedBox(width: 10),
                             Text(
                               _dateRange == null
-                                  ? (isArabic ? 'تحديد نطاق مخصص (اختياري)' : 'Select Custom Range (Optional)')
+                                  ? (isArabic
+                                        ? 'تحديد نطاق مخصص (اختياري)'
+                                        : 'Select Custom Range (Optional)')
                                   : '${DateFormatter.formatDate(_dateRange!.start, isArabic: isArabic)}  -  ${DateFormatter.formatDate(_dateRange!.end, isArabic: isArabic)}',
                               style: TextStyle(
                                 fontSize: 13,
-                                fontWeight: _dateRange != null ? FontWeight.bold : FontWeight.normal,
+                                fontWeight: _dateRange != null
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
                               ),
                             ),
                           ],
@@ -187,7 +223,10 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                 // Wallets Chips
                 Text(
                   isArabic ? 'المحفظة / الحساب' : 'Wallet / Account',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -213,7 +252,10 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                 // Categories Chips
                 Text(
                   isArabic ? 'التصنيف' : 'Category',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -239,7 +281,10 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                 // Min & Max Amount Fields
                 Text(
                   isArabic ? 'نطاق المبلغ' : 'Amount Range',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -247,10 +292,15 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                     Expanded(
                       child: TextField(
                         controller: _minAmountController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
                         decoration: InputDecoration(
                           hintText: isArabic ? 'الحد الأدنى' : 'Min Amount',
-                          prefixIcon: const Icon(Icons.remove_circle_outline, size: 18),
+                          prefixIcon: const Icon(
+                            Icons.remove_circle_outline,
+                            size: 18,
+                          ),
                         ),
                       ),
                     ),
@@ -258,10 +308,15 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                     Expanded(
                       child: TextField(
                         controller: _maxAmountController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
                         decoration: InputDecoration(
                           hintText: isArabic ? 'الحد الأقصى' : 'Max Amount',
-                          prefixIcon: const Icon(Icons.add_circle_outline, size: 18),
+                          prefixIcon: const Icon(
+                            Icons.add_circle_outline,
+                            size: 18,
+                          ),
                         ),
                       ),
                     ),
@@ -279,20 +334,28 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             child: ElevatedButton(
               child: Text(
                 isArabic ? 'تطبيق الفلترة' : 'Apply Filters',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: Colors.white,
+                ),
               ),
               onPressed: () {
-                final minVal = double.tryParse(_minAmountController.text.trim());
-                final maxVal = double.tryParse(_maxAmountController.text.trim());
+                final minVal = double.tryParse(
+                  _minAmountController.text.trim(),
+                );
+                final maxVal = double.tryParse(
+                  _maxAmountController.text.trim(),
+                );
 
                 context.read<TransactionProvider>().setFilter(
-                      type: _type,
-                      walletId: _walletId,
-                      categoryId: _categoryId,
-                      dateRange: _dateRange,
-                      minAmount: minVal,
-                      maxAmount: maxVal,
-                    );
+                  type: _type,
+                  walletId: _walletId,
+                  categoryId: _categoryId,
+                  dateRange: _dateRange,
+                  minAmount: minVal,
+                  maxAmount: maxVal,
+                );
                 Navigator.pop(context);
               },
             ),

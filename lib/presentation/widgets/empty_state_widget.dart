@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../../core/constants/app_colors.dart';
+
+/// ويدجت الحالة الفارغة بتصميم Vector جذاب وتوجيهات واضحة للمستخدم
 class EmptyStateWidget extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -25,31 +29,44 @@ class EmptyStateWidget extends StatelessWidget {
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.05)
-                    : Colors.black.withValues(alpha: 0.03),
+                gradient: LinearGradient(
+                  colors: isDark
+                      ? [
+                          AppColors.primary.withValues(alpha: 0.15),
+                          const Color(0xFF1A302A),
+                        ]
+                      : [
+                          AppColors.primary.withValues(alpha: 0.12),
+                          const Color(0xFFEAF1ED),
+                        ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.primary.withValues(
+                    alpha: isDark ? 0.25 : 0.15,
+                  ),
+                  width: 1.2,
+                ),
               ),
-              child: Icon(
-                icon,
-                size: 48,
-                color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.6),
-              ),
+              child: Icon(icon, size: 46, color: AppColors.primary),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             Text(
               title,
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: theme.textTheme.titleLarge?.color,
+                fontFamily: 'Cairo',
               ),
               textAlign: TextAlign.center,
             ),
@@ -58,25 +75,40 @@ class EmptyStateWidget extends StatelessWidget {
               Text(
                 subtitle!,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 12.5,
                   color: theme.textTheme.bodyMedium?.color,
+                  fontFamily: 'Cairo',
                 ),
                 textAlign: TextAlign.center,
               ),
             ],
             if (actionButton != null) ...[
-              const SizedBox(height: 18),
+              const SizedBox(height: 20),
               actionButton!,
             ] else if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 18),
+              const SizedBox(height: 20),
               ElevatedButton.icon(
-                onPressed: onAction,
-                icon: const Icon(Icons.add, size: 18),
-                label: Text(actionLabel!),
+                onPressed: () {
+                  HapticFeedback.lightImpact();
+                  onAction!();
+                },
+                icon: const Icon(Icons.add_rounded, size: 20),
+                label: Text(
+                  actionLabel!,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Cairo',
+                  ),
+                ),
                 style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 12,
+                  ),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
               ),

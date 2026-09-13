@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/wallet_model.dart';
 import '../../../providers/settings_provider.dart';
@@ -17,26 +18,35 @@ class AddEditWalletScreen extends StatefulWidget {
 class _AddEditWalletScreenState extends State<AddEditWalletScreen> {
   final TextEditingController _nameArController = TextEditingController();
   final TextEditingController _nameEnController = TextEditingController();
+  final TextEditingController _descController = TextEditingController();
   final TextEditingController _balanceController = TextEditingController();
 
   WalletType _selectedType = WalletType.cash;
   int _selectedColor = 0xFF10B981;
-  int _selectedIcon = 0xe463; // payments
+  int _selectedIcon = Icons.account_balance_wallet.codePoint;
+  bool _isDefault = false;
+  bool _showAdvancedName = false;
 
   final List<int> _colors = [
-    0xFF10B981, 0xFF3B82F6, 0xFF6366F1, 0xFF8B5CF6,
-    0xFFEC4899, 0xFFEF4444, 0xFFF59E0B, 0xFF14B8A6,
+    0xFF10B981,
+    0xFF3B82F6,
+    0xFF6366F1,
+    0xFF8B5CF6,
+    0xFFEC4899,
+    0xFFEF4444,
+    0xFFF59E0B,
+    0xFF14B8A6,
   ];
 
-  final List<int> _icons = [
-    0xe463, // payments
-    0xe040, // account_balance
-    0xe19f, // credit_card
-    0xe56c, // savings
-    0xe041, // account_balance_wallet
-    0xe59c, // shopping_bag
-    0xe661, // trending_up
-    0xe8e5, // monetization_on
+  final List<IconData> _icons = [
+    Icons.payments,
+    Icons.account_balance,
+    Icons.credit_card,
+    Icons.savings,
+    Icons.account_balance_wallet,
+    Icons.shopping_bag,
+    Icons.trending_up,
+    Icons.monetization_on,
   ];
 
   @override
@@ -49,6 +59,11 @@ class _AddEditWalletScreenState extends State<AddEditWalletScreen> {
       _selectedType = widget.wallet!.type;
       _selectedColor = widget.wallet!.colorValue;
       _selectedIcon = widget.wallet!.iconCodePoint;
+      _isDefault = widget.wallet!.isDefault;
+      if (widget.wallet!.nameEn != widget.wallet!.nameAr &&
+          widget.wallet!.nameEn.isNotEmpty) {
+        _showAdvancedName = true;
+      }
     }
   }
 
@@ -56,6 +71,7 @@ class _AddEditWalletScreenState extends State<AddEditWalletScreen> {
   void dispose() {
     _nameArController.dispose();
     _nameEnController.dispose();
+    _descController.dispose();
     _balanceController.dispose();
     super.dispose();
   }
@@ -64,44 +80,85 @@ class _AddEditWalletScreenState extends State<AddEditWalletScreen> {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
     final isArabic = settings.isArabic;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isEditing = widget.wallet != null;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isEditing
-            ? (isArabic ? 'تعديل المحفظة' : 'Edit Wallet')
-            : (isArabic ? 'إضافة محفظة جديدة' : 'Add New Wallet')),
+        title: Text(
+          isEditing
+              ? (isArabic ? 'تعديل المحفظة' : 'Edit Wallet')
+              : (isArabic ? 'إضافة محفظة جديدة' : 'Add New Wallet'),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Name Fields
+            // Name Field
             Text(
-              isArabic ? 'اسم المحفظة بالعربية' : 'Wallet Name (Arabic)',
+              isArabic ? 'اسم المحفظة' : 'Wallet Name',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _nameArController,
               decoration: InputDecoration(
-                hintText: isArabic ? 'مثال: محفظة الجيب، حساب الراجحي' : 'e.g., Pocket cash',
+                hintText: isArabic
+                    ? 'مثال: محفظة الجيب، حساب الراجحي'
+                    : 'e.g., Pocket cash, Main Bank',
                 prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
 
-            Text(
-              isArabic ? 'اسم المحفظة بالإنجليزية' : 'Wallet Name (English)',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _nameEnController,
-              decoration: InputDecoration(
-                hintText: isArabic ? 'مثال: Main Bank, Cash' : 'e.g., Main Bank',
-                prefixIcon: const Icon(Icons.language),
+            // Collapsible Additional Options
+            Theme(
+              data:
+                  Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                initiallyExpanded: _showAdvancedName,
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: Text(
+                  isArabic
+                      ? 'خيارات إضافية (الاسم بالإنجليزية والوصف)'
+                      : 'Additional options (English Name & Notes)',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                children: [
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: _nameEnController,
+                    decoration: InputDecoration(
+                      labelText: isArabic
+                          ? 'الاسم بالإنجليزية (اختياري)'
+                          : 'English Name (Optional)',
+                      hintText: 'e.g., Main Bank, Cash',
+                      prefixIcon: const Icon(Icons.language),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _descController,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      labelText: isArabic
+                          ? 'الوصف / ملاحظة (اختياري)'
+                          : 'Description / Notes (Optional)',
+                      hintText: isArabic
+                          ? 'ملاحظة خاصة بهذه المحفظة...'
+                          : 'Notes about this wallet...',
+                      prefixIcon: const Icon(Icons.notes_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
               ),
             ),
             const SizedBox(height: 16),
@@ -115,7 +172,9 @@ class _AddEditWalletScreenState extends State<AddEditWalletScreen> {
               const SizedBox(height: 8),
               TextField(
                 controller: _balanceController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: InputDecoration(
                   hintText: '0.00',
                   prefixIcon: const Icon(Icons.attach_money),
@@ -154,10 +213,10 @@ class _AddEditWalletScreenState extends State<AddEditWalletScreen> {
             Wrap(
               spacing: 12,
               runSpacing: 12,
-              children: _icons.map((code) {
-                final isSelected = _selectedIcon == code;
+              children: _icons.map((icon) {
+                final isSelected = _selectedIcon == icon.codePoint;
                 return InkWell(
-                  onTap: () => setState(() => _selectedIcon = code),
+                  onTap: () => setState(() => _selectedIcon = icon.codePoint),
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
                     padding: const EdgeInsets.all(12),
@@ -167,12 +226,14 @@ class _AddEditWalletScreenState extends State<AddEditWalletScreen> {
                           : Theme.of(context).cardTheme.color,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: isSelected ? Color(_selectedColor) : Colors.grey.withValues(alpha: 0.3),
+                        color: isSelected
+                            ? Color(_selectedColor)
+                            : Colors.grey.withValues(alpha: 0.3),
                         width: isSelected ? 2 : 1,
                       ),
                     ),
                     child: Icon(
-                      IconData(code, fontFamily: 'MaterialIcons'),
+                      icon,
                       color: isSelected ? Color(_selectedColor) : Colors.grey,
                       size: 24,
                     ),
@@ -213,7 +274,42 @@ class _AddEditWalletScreenState extends State<AddEditWalletScreen> {
                 );
               }).toList(),
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
+
+            // Default Wallet Switch
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardTheme.color,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                ),
+              ),
+              child: SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  isArabic ? 'تعيين كمحفظة افتراضية' : 'Set as default wallet',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+                subtitle: Text(
+                  isArabic
+                      ? 'ستُحدد هذه المحفظة تلقائياً للمعاملات الجديدة'
+                      : 'Selected automatically for new transactions',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).textTheme.bodySmall?.color,
+                  ),
+                ),
+                value: _isDefault,
+                activeTrackColor: AppColors.primary,
+                onChanged: (val) => setState(() => _isDefault = val),
+              ),
+            ),
+            const SizedBox(height: 28),
 
             // Save Button
             SizedBox(
@@ -230,7 +326,10 @@ class _AddEditWalletScreenState extends State<AddEditWalletScreen> {
                 ),
                 child: Text(
                   isArabic ? 'حفظ المحفظة ✓' : 'Save Wallet ✓',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
@@ -260,42 +359,48 @@ class _AddEditWalletScreenState extends State<AddEditWalletScreen> {
   Future<void> _saveWallet() async {
     final settings = context.read<SettingsProvider>();
     final isArabic = settings.isArabic;
-    final nameAr = _nameArController.text.trim();
-    final nameEn = _nameEnController.text.trim();
+    final mainName = _nameArController.text.trim();
+    final englishName = _nameEnController.text.trim();
 
-    if (nameAr.isEmpty && nameEn.isEmpty) {
+    if (mainName.isEmpty && englishName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isArabic ? 'يرجى إدخال اسم المحفظة' : 'Please enter wallet name'),
+          content: Text(
+            isArabic ? 'يرجى إدخال اسم المحفظة' : 'Please enter wallet name',
+          ),
           backgroundColor: AppColors.expense,
         ),
       );
       return;
     }
 
+    final effectiveAr = mainName.isNotEmpty ? mainName : englishName;
+    final effectiveEn = englishName.isNotEmpty ? englishName : effectiveAr;
     final balance = double.tryParse(_balanceController.text.trim()) ?? 0.0;
     final walletProvider = context.read<WalletProvider>();
 
     if (widget.wallet != null) {
       // Update
       final updated = widget.wallet!.copyWith(
-        nameAr: nameAr.isNotEmpty ? nameAr : nameEn,
-        nameEn: nameEn.isNotEmpty ? nameEn : nameAr,
+        nameAr: effectiveAr,
+        nameEn: effectiveEn,
         type: _selectedType,
         colorValue: _selectedColor,
         iconCodePoint: _selectedIcon,
+        isDefault: _isDefault,
       );
       await walletProvider.updateWallet(updated);
     } else {
       // Create new
       await walletProvider.addWallet(
-        nameAr: nameAr.isNotEmpty ? nameAr : nameEn,
-        nameEn: nameEn.isNotEmpty ? nameEn : nameAr,
+        nameAr: effectiveAr,
+        nameEn: effectiveEn,
         initialBalance: balance,
         currencyCode: settings.currencyCode,
         iconCodePoint: _selectedIcon,
         colorValue: _selectedColor,
         type: _selectedType,
+        isDefault: _isDefault,
       );
     }
 

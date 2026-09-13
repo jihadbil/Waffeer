@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../core/services/csv_export_service.dart';
 import '../../core/services/pdf_report_service.dart';
@@ -44,8 +45,13 @@ class _ExportBottomSheetState extends State<ExportBottomSheet> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                isArabic ? 'تصدير ومشاركة التقرير المالي' : 'Export & Share Financial Report',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                isArabic
+                    ? 'تصدير ومشاركة التقرير المالي'
+                    : 'Export & Share Financial Report',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               IconButton(
                 icon: const Icon(Icons.close_rounded),
@@ -67,7 +73,9 @@ class _ExportBottomSheetState extends State<ExportBottomSheet> {
                 child: _buildFormatCard(
                   id: 'pdf',
                   title: isArabic ? 'تقرير PDF رسمي' : 'Official PDF Report',
-                  subtitle: isArabic ? 'كشف حساب منسق وجداول' : 'Formatted Statement & Tables',
+                  subtitle: isArabic
+                      ? 'كشف حساب منسق وجداول'
+                      : 'Formatted Statement & Tables',
                   icon: Icons.picture_as_pdf_rounded,
                   color: Colors.redAccent,
                   isSelected: _selectedFormat == 'pdf',
@@ -78,7 +86,9 @@ class _ExportBottomSheetState extends State<ExportBottomSheet> {
                 child: _buildFormatCard(
                   id: 'csv',
                   title: isArabic ? 'جدول Excel / CSV' : 'Excel / CSV Sheet',
-                  subtitle: isArabic ? 'بيانات رقمية قابلة للتحليل' : 'Raw Data for Spreadsheets',
+                  subtitle: isArabic
+                      ? 'بيانات رقمية قابلة للتحليل'
+                      : 'Raw Data for Spreadsheets',
                   icon: Icons.table_chart_rounded,
                   color: Colors.green,
                   isSelected: _selectedFormat == 'csv',
@@ -130,22 +140,38 @@ class _ExportBottomSheetState extends State<ExportBottomSheet> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   IconButton(
-                    icon: Icon(isArabic ? Icons.chevron_right : Icons.chevron_left),
+                    icon: Icon(
+                      isArabic ? Icons.chevron_right : Icons.chevron_left,
+                    ),
                     onPressed: () {
                       setState(() {
-                        _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1);
+                        _selectedMonth = DateTime(
+                          _selectedMonth.year,
+                          _selectedMonth.month - 1,
+                        );
                       });
                     },
                   ),
                   Text(
-                    DateFormatter.formatMonthYear(_selectedMonth, isArabic: isArabic),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    DateFormatter.formatMonthYear(
+                      _selectedMonth,
+                      isArabic: isArabic,
+                    ),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
                   ),
                   IconButton(
-                    icon: Icon(isArabic ? Icons.chevron_left : Icons.chevron_right),
+                    icon: Icon(
+                      isArabic ? Icons.chevron_left : Icons.chevron_right,
+                    ),
                     onPressed: () {
                       setState(() {
-                        _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1);
+                        _selectedMonth = DateTime(
+                          _selectedMonth.year,
+                          _selectedMonth.month + 1,
+                        );
                       });
                     },
                   ),
@@ -164,14 +190,23 @@ class _ExportBottomSheetState extends State<ExportBottomSheet> {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
                     )
                   : const Icon(Icons.share_rounded, color: Colors.white),
               label: Text(
                 _isExporting
-                    ? (isArabic ? 'جاري تجهيز التقرير...' : 'Generating Report...')
+                    ? (isArabic
+                          ? 'جاري تجهيز التقرير...'
+                          : 'Generating Report...')
                     : (isArabic ? 'تصدير ومشاركة الآن' : 'Export & Share Now'),
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.white),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: Colors.white,
+                ),
               ),
               onPressed: _isExporting ? null : () => _performExport(context),
             ),
@@ -203,7 +238,9 @@ class _ExportBottomSheetState extends State<ExportBottomSheet> {
               : Theme.of(context).cardTheme.color,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? color : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+            color: isSelected
+                ? color
+                : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
             width: isSelected ? 2 : 1,
           ),
         ),
@@ -247,13 +284,21 @@ class _ExportBottomSheetState extends State<ExportBottomSheet> {
     final allTxs = txProvider.transactions;
     final filtered = _isAllTime
         ? allTxs
-        : allTxs.where((t) => t.dateTime.year == _selectedMonth.year && t.dateTime.month == _selectedMonth.month).toList();
+        : allTxs
+              .where(
+                (t) =>
+                    t.dateTime.year == _selectedMonth.year &&
+                    t.dateTime.month == _selectedMonth.month,
+              )
+              .toList();
 
     final catMap = {for (var c in catProvider.categories) c.id: c};
     final walletMap = {for (var w in walletProvider.wallets) w.id: w};
 
     final periodTitle = _isAllTime
-        ? (isArabic ? 'كافة المعاملات التاريخية' : 'All Historical Transactions')
+        ? (isArabic
+              ? 'كافة المعاملات التاريخية'
+              : 'All Historical Transactions')
         : DateFormatter.formatMonthYear(_selectedMonth, isArabic: isArabic);
 
     final totalIncome = filtered
@@ -284,7 +329,8 @@ class _ExportBottomSheetState extends State<ExportBottomSheet> {
           categoryMap: catMap,
           walletMap: walletMap,
           isArabic: isArabic,
-          title: '${isArabic ? "تقرير المعاملات" : "Transactions Report"} - $periodTitle',
+          title:
+              '${isArabic ? "تقرير المعاملات" : "Transactions Report"} - $periodTitle',
         );
       }
 

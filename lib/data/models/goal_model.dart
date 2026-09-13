@@ -1,3 +1,7 @@
+import 'package:flutter/material.dart';
+
+import '../../core/utils/material_icon_resolver.dart';
+
 class GoalModel {
   final String id;
   final String title;
@@ -35,6 +39,11 @@ class GoalModel {
     final diff = targetAmount - savedAmount;
     return diff > 0 ? diff : 0;
   }
+
+  IconData get iconData => MaterialIconResolver.resolve(
+    iconCodePoint,
+    fallback: Icons.track_changes_rounded,
+  );
 
   Map<String, dynamic> toMap() {
     return {

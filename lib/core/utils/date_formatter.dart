@@ -10,7 +10,10 @@ class DateFormatter {
   }
 
   static String formatDateTime(DateTime date, {bool isArabic = false}) {
-    return DateFormat('d MMM yyyy, hh:mm a', isArabic ? 'ar' : 'en').format(date);
+    return DateFormat(
+      'd MMM yyyy, hh:mm a',
+      isArabic ? 'ar' : 'en',
+    ).format(date);
   }
 
   static String formatMonth(DateTime date, {bool isArabic = false}) {

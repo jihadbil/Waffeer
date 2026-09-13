@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/material_icon_resolver.dart';
+
 enum WalletType { cash, bank, creditCard, digitalWallet, savings, other }
 
 class WalletModel {
@@ -29,10 +31,10 @@ class WalletModel {
     this.isDefault = false,
   });
 
-  IconData get iconData => IconData(
-        iconCodePoint,
-        fontFamily: iconFontFamily ?? 'MaterialIcons',
-      );
+  IconData get iconData => MaterialIconResolver.resolve(
+    iconCodePoint,
+    fallback: Icons.account_balance_wallet_rounded,
+  );
 
   Color get color => Color(colorValue);
 
@@ -102,41 +104,41 @@ class WalletModel {
   }
 
   static List<WalletModel> defaultWallets(String currencyCode) => [
-        WalletModel(
-          id: 'wallet_cash',
-          nameEn: 'Cash / Pocket',
-          nameAr: 'نقدي / كاش',
-          initialBalance: 0.0,
-          currentBalance: 0.0,
-          currencyCode: currencyCode,
-          iconCodePoint: 0xe463, // payments
-          colorValue: 0xFF10B981,
-          type: WalletType.cash,
-          isDefault: true,
-        ),
-        WalletModel(
-          id: 'wallet_bank',
-          nameEn: 'Main Bank Account',
-          nameAr: 'حساب بنكي رئيسي',
-          initialBalance: 0.0,
-          currentBalance: 0.0,
-          currencyCode: currencyCode,
-          iconCodePoint: 0xe040, // account_balance
-          colorValue: 0xFF3B82F6,
-          type: WalletType.bank,
-          isDefault: false,
-        ),
-        WalletModel(
-          id: 'wallet_savings',
-          nameEn: 'Savings Vault',
-          nameAr: 'خزنة المدخرات',
-          initialBalance: 0.0,
-          currentBalance: 0.0,
-          currencyCode: currencyCode,
-          iconCodePoint: 0xe56c, // savings
-          colorValue: 0xFF8B5CF6,
-          type: WalletType.savings,
-          isDefault: false,
-        ),
-      ];
+    WalletModel(
+      id: 'wallet_cash',
+      nameEn: 'Cash / Pocket',
+      nameAr: 'نقدي / كاش',
+      initialBalance: 0.0,
+      currentBalance: 0.0,
+      currencyCode: currencyCode,
+      iconCodePoint: 0xe463, // payments
+      colorValue: 0xFF10B981,
+      type: WalletType.cash,
+      isDefault: true,
+    ),
+    WalletModel(
+      id: 'wallet_bank',
+      nameEn: 'Main Bank Account',
+      nameAr: 'حساب بنكي رئيسي',
+      initialBalance: 0.0,
+      currentBalance: 0.0,
+      currencyCode: currencyCode,
+      iconCodePoint: 0xe040, // account_balance
+      colorValue: 0xFF3B82F6,
+      type: WalletType.bank,
+      isDefault: false,
+    ),
+    WalletModel(
+      id: 'wallet_savings',
+      nameEn: 'Savings Vault',
+      nameAr: 'خزنة المدخرات',
+      initialBalance: 0.0,
+      currentBalance: 0.0,
+      currencyCode: currencyCode,
+      iconCodePoint: 0xe56c, // savings
+      colorValue: 0xFF8B5CF6,
+      type: WalletType.savings,
+      isDefault: false,
+    ),
+  ];
 }

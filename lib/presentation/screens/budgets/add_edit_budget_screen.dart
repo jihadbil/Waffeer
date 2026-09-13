@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/budget_model.dart';
 import '../../../providers/budget_provider.dart';
@@ -47,7 +48,9 @@ class _AddEditBudgetScreenState extends State<AddEditBudgetScreen> {
             const SizedBox(height: 8),
             TextField(
               controller: _amountController,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               decoration: InputDecoration(
                 hintText: '0.00',
@@ -68,7 +71,11 @@ class _AddEditBudgetScreenState extends State<AddEditBudgetScreen> {
               items: [
                 DropdownMenuItem<String?>(
                   value: null,
-                  child: Text(isArabic ? '📊 ميزانية إجمالية لكل المصاريف' : '📊 Overall Total Expenses'),
+                  child: Text(
+                    isArabic
+                        ? '📊 ميزانية إجمالية لكل المصاريف'
+                        : '📊 Overall Total Expenses',
+                  ),
                 ),
                 ...catProvider.expenseCategories.map((c) {
                   return DropdownMenuItem<String?>(
@@ -129,8 +136,13 @@ class _AddEditBudgetScreenState extends State<AddEditBudgetScreen> {
                   ),
                 ),
                 child: Text(
-                  isArabic ? 'حفظ وتفعيل الميزانية ✓' : 'Save & Activate Budget ✓',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  isArabic
+                      ? 'حفظ وتفعيل الميزانية ✓'
+                      : 'Save & Activate Budget ✓',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
@@ -149,7 +161,11 @@ class _AddEditBudgetScreenState extends State<AddEditBudgetScreen> {
     if (limit == null || limit <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isArabic ? 'يرجى إدخال مبلغ صحيح للميزانية' : 'Please enter a valid budget amount'),
+          content: Text(
+            isArabic
+                ? 'يرجى إدخال مبلغ صحيح للميزانية'
+                : 'Please enter a valid budget amount',
+          ),
           backgroundColor: AppColors.expense,
         ),
       );
@@ -173,7 +189,29 @@ class _AddEditBudgetScreenState extends State<AddEditBudgetScreen> {
       endDate = DateTime(now.year, now.month, lastDay, 23, 59, 59);
     }
 
-    await context.read<BudgetProvider>().addBudget(
+    final budgetProvider = context.read<BudgetProvider>();
+    final duplicate = budgetProvider.budgets.any(
+      (b) =>
+          b.categoryId == _selectedCategoryId &&
+          b.period == _selectedPeriod &&
+          DateTime.now().isBefore(b.endDate),
+    );
+
+    if (duplicate) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isArabic
+                ? 'توجد ميزانية نشطة بالفعل لهذا التصنيف في نفس الفترة الزمنية!'
+                : 'An active budget already exists for this category and period!',
+          ),
+          backgroundColor: AppColors.expense,
+        ),
+      );
+      return;
+    }
+
+    await budgetProvider.addBudget(
       categoryId: _selectedCategoryId,
       limitAmount: limit,
       period: _selectedPeriod,
@@ -185,7 +223,11 @@ class _AddEditBudgetScreenState extends State<AddEditBudgetScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isArabic ? 'تم تفعيل الميزانية بنجاح' : 'Budget activated successfully'),
+          content: Text(
+            isArabic
+                ? 'تم تفعيل الميزانية بنجاح'
+                : 'Budget activated successfully',
+          ),
           backgroundColor: AppColors.primary,
         ),
       );

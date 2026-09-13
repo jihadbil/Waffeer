@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+
 import '../../core/database/db_helper.dart';
 import '../../data/models/transaction_model.dart';
 import 'wallet_provider.dart';
@@ -17,7 +18,9 @@ class MonthlyTrend {
 }
 
 class TransactionProvider with ChangeNotifier {
-  final DatabaseHelper _dbHelper = DatabaseHelper.instance;
+  final DatabaseHelper _dbHelper;
+  TransactionProvider({DatabaseHelper? database})
+    : _dbHelper = database ?? DatabaseHelper.instance;
   List<TransactionModel> _transactions = [];
   bool _isLoading = true;
 
@@ -25,7 +28,6 @@ class TransactionProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
 
   // Filter properties
-  DateTime? _selectedMonth;
   String? _selectedWalletId;
   String? _selectedCategoryId;
   TransactionType? _selectedType;
@@ -34,7 +36,6 @@ class TransactionProvider with ChangeNotifier {
   double? _minAmount;
   double? _maxAmount;
 
-  DateTime get selectedMonth => _selectedMonth ?? DateTime.now();
   String? get selectedWalletId => _selectedWalletId;
   String? get selectedCategoryId => _selectedCategoryId;
   TransactionType? get selectedType => _selectedType;
@@ -61,10 +62,10 @@ class TransactionProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  void setSelectedMonth(DateTime month) {
-    _selectedMonth = month;
-    _customDateRange = null;
-    notifyListeners();
+  @visibleForTesting
+  void replaceTransactionsForTesting(List<TransactionModel> transactions) {
+    _transactions = List<TransactionModel>.of(transactions);
+    _isLoading = false;
   }
 
   void setSearchQuery(String query) {
@@ -104,15 +105,20 @@ class TransactionProvider with ChangeNotifier {
     return _transactions.where((tx) {
       // Custom Date Range filter
       if (_customDateRange != null) {
-        final start = DateTime(_customDateRange!.start.year, _customDateRange!.start.month, _customDateRange!.start.day);
-        final end = DateTime(_customDateRange!.end.year, _customDateRange!.end.month, _customDateRange!.end.day, 23, 59, 59);
+        final start = DateTime(
+          _customDateRange!.start.year,
+          _customDateRange!.start.month,
+          _customDateRange!.start.day,
+        );
+        final end = DateTime(
+          _customDateRange!.end.year,
+          _customDateRange!.end.month,
+          _customDateRange!.end.day,
+          23,
+          59,
+          59,
+        );
         if (tx.dateTime.isBefore(start) || tx.dateTime.isAfter(end)) {
-          return false;
-        }
-      } else if (_selectedMonth != null) {
-        // Month filter
-        if (tx.dateTime.year != _selectedMonth!.year ||
-            tx.dateTime.month != _selectedMonth!.month) {
           return false;
         }
       }
@@ -131,7 +137,8 @@ class TransactionProvider with ChangeNotifier {
 
       // Wallet filter
       if (_selectedWalletId != null) {
-        if (tx.walletId != _selectedWalletId && tx.toWalletId != _selectedWalletId) {
+        if (tx.walletId != _selectedWalletId &&
+            tx.toWalletId != _selectedWalletId) {
           return false;
         }
       }
@@ -158,26 +165,49 @@ class TransactionProvider with ChangeNotifier {
     }).toList();
   }
 
+  /// Applies the user-selected advanced filters while keeping the visible
+  /// month local to the screen that owns it. This prevents browsing an old
+  /// month in Analytics from silently changing the Dashboard totals.
+  List<TransactionModel> filteredTransactionsForMonth(DateTime month) {
+    return filteredTransactions.where((tx) {
+      if (_customDateRange != null) return true;
+      return tx.dateTime.year == month.year && tx.dateTime.month == month.month;
+    }).toList();
+  }
+
   // Monthly Metrics
-  double get monthlyExpense {
-    final now = _selectedMonth ?? DateTime.now();
+  double expenseForMonth(DateTime month) {
     return _transactions
-        .where((tx) =>
-            tx.type == TransactionType.expense &&
-            tx.dateTime.year == now.year &&
-            tx.dateTime.month == now.month)
+        .where(
+          (tx) =>
+              tx.type == TransactionType.expense &&
+              tx.dateTime.year == month.year &&
+              tx.dateTime.month == month.month,
+        )
         .fold(0.0, (sum, tx) => sum + tx.amount);
   }
 
-  double get monthlyIncome {
-    final now = _selectedMonth ?? DateTime.now();
+  double incomeForMonth(DateTime month) {
     return _transactions
-        .where((tx) =>
-            tx.type == TransactionType.income &&
-            tx.dateTime.year == now.year &&
-            tx.dateTime.month == now.month)
+        .where(
+          (tx) =>
+              tx.type == TransactionType.income &&
+              tx.dateTime.year == month.year &&
+              tx.dateTime.month == month.month,
+        )
         .fold(0.0, (sum, tx) => sum + tx.amount);
   }
+
+  double savingsRateForMonth(DateTime month) {
+    final income = incomeForMonth(month);
+    if (income <= 0) return 0.0;
+    final rate = (income - expenseForMonth(month)) / income;
+    return (rate * 100).clamp(0.0, 100.0);
+  }
+
+  double get monthlyExpense => expenseForMonth(DateTime.now());
+
+  double get monthlyIncome => incomeForMonth(DateTime.now());
 
   double get monthlyNetCashFlow => monthlyIncome - monthlyExpense;
 
@@ -192,18 +222,20 @@ class TransactionProvider with ChangeNotifier {
   }
 
   // Category breakdown for charts
-  Map<String, double> get categoryExpenseBreakdown {
-    final now = _selectedMonth ?? DateTime.now();
+  Map<String, double> categoryExpenseBreakdownForMonth(DateTime month) {
     final map = <String, double>{};
     for (final tx in _transactions) {
       if (tx.type == TransactionType.expense &&
-          tx.dateTime.year == now.year &&
-          tx.dateTime.month == now.month) {
+          tx.dateTime.year == month.year &&
+          tx.dateTime.month == month.month) {
         map[tx.categoryId] = (map[tx.categoryId] ?? 0.0) + tx.amount;
       }
     }
     return map;
   }
+
+  Map<String, double> get categoryExpenseBreakdown =>
+      categoryExpenseBreakdownForMonth(DateTime.now());
 
   /// Calculates Monthly trends for the past N months
   List<MonthlyTrend> getMonthlyTrends([int count = 6]) {
@@ -213,7 +245,9 @@ class TransactionProvider with ChangeNotifier {
     for (int i = count - 1; i >= 0; i--) {
       final monthDate = DateTime(now.year, now.month - i, 1);
       final monthTxs = _transactions.where(
-        (tx) => tx.dateTime.year == monthDate.year && tx.dateTime.month == monthDate.month,
+        (tx) =>
+            tx.dateTime.year == monthDate.year &&
+            tx.dateTime.month == monthDate.month,
       );
 
       final inc = monthTxs
@@ -231,6 +265,8 @@ class TransactionProvider with ChangeNotifier {
   }
 
   Future<void> addTransaction({
+    String? transactionId,
+    bool saveAsRoutine = false,
     required double amount,
     required TransactionType type,
     required String categoryId,
@@ -246,7 +282,7 @@ class TransactionProvider with ChangeNotifier {
     WalletProvider? walletProvider,
   }) async {
     final newTx = TransactionModel(
-      id: const Uuid().v4(),
+      id: transactionId ?? const Uuid().v4(),
       amount: amount,
       type: type,
       categoryId: categoryId,
@@ -261,9 +297,11 @@ class TransactionProvider with ChangeNotifier {
       tag: tag,
     );
 
-    await _dbHelper.insertTransaction(newTx);
-    _transactions.insert(0, newTx);
-    _transactions.sort((a, b) => b.dateTime.compareTo(a.dateTime));
+    await _dbHelper.insertTransactionWithRoutine(
+      newTx,
+      saveAsRoutine: saveAsRoutine,
+    );
+    await loadTransactions();
 
     // Refresh wallets if provider is passed
     if (walletProvider != null) {
@@ -277,9 +315,7 @@ class TransactionProvider with ChangeNotifier {
     required TransactionModel oldTx,
     required WalletProvider walletProvider,
   }) async {
-    // Delete old transaction effect then insert new
-    await _dbHelper.deleteTransaction(oldTx);
-    await _dbHelper.insertTransaction(updatedTx);
+    await _dbHelper.updateTransactionAtomically(updatedTx);
 
     final index = _transactions.indexWhere((t) => t.id == oldTx.id);
     if (index != -1) {
@@ -300,6 +336,18 @@ class TransactionProvider with ChangeNotifier {
 
     // Refresh wallets
     await walletProvider.loadWallets(tx.currencyCode);
+    notifyListeners();
+  }
+
+  Future<void> restoreTransaction(
+    TransactionModel transaction, {
+    required WalletProvider walletProvider,
+  }) async {
+    await _dbHelper.insertTransaction(transaction);
+    _transactions.removeWhere((item) => item.id == transaction.id);
+    _transactions.add(transaction);
+    _transactions.sort((a, b) => b.dateTime.compareTo(a.dateTime));
+    await walletProvider.loadWallets(transaction.currencyCode);
     notifyListeners();
   }
 }

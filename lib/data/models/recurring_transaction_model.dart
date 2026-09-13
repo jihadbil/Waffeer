@@ -131,9 +131,21 @@ class RecurringTransactionModel {
         int newDay = fromDate.day;
         int maxDaysInNewMonth = DateTime(newYear, newMonth + 1, 0).day;
         if (newDay > maxDaysInNewMonth) newDay = maxDaysInNewMonth;
-        return DateTime(newYear, newMonth, newDay, fromDate.hour, fromDate.minute);
+        return DateTime(
+          newYear,
+          newMonth,
+          newDay,
+          fromDate.hour,
+          fromDate.minute,
+        );
       case RecurrenceFrequency.yearly:
-        return DateTime(fromDate.year + 1, fromDate.month, fromDate.day, fromDate.hour, fromDate.minute);
+        return DateTime(
+          fromDate.year + 1,
+          fromDate.month,
+          fromDate.day,
+          fromDate.hour,
+          fromDate.minute,
+        );
     }
   }
 

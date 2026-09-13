@@ -17,11 +17,7 @@ class ReceiptLineItem {
 
   /// تحويل كائن البند إلى خريطة Map لحفظه أو نقله
   Map<String, dynamic> toMap() {
-    return {
-      'name': name,
-      'price': price,
-      'quantity': quantity,
-    };
+    return {'name': name, 'price': price, 'quantity': quantity};
   }
 
   /// إنشاء كائن بند الفاتورة من خريطة Map
@@ -87,13 +83,15 @@ class ParsedReceipt {
   bool get hasExtractedAmount => totalAmount != null && totalAmount! > 0;
 
   /// التحقق مما إذا كان قد تم استخراج اسم المتجر بنجاح
-  bool get hasExtractedMerchant => merchantName != null && merchantName!.trim().isNotEmpty;
+  bool get hasExtractedMerchant =>
+      merchantName != null && merchantName!.trim().isNotEmpty;
 
   /// التحقق مما إذا كان قد تم استخراج تاريخ الفاتورة بنجاح
   bool get hasExtractedDate => dateTime != null;
 
   /// التحقق مما إذا كان هناك تصنيف مقترح للفاتورة
-  bool get hasExtractedCategory => suggestedCategoryId != null && suggestedCategoryId!.isNotEmpty;
+  bool get hasExtractedCategory =>
+      suggestedCategoryId != null && suggestedCategoryId!.isNotEmpty;
 
   /// إنشاء نسخة جديدة من الكائن مع إمكانية تعديل بعض الحقول
   ParsedReceipt copyWith({
@@ -116,7 +114,8 @@ class ParsedReceipt {
       taxAmount: taxAmount ?? this.taxAmount,
       dateTime: dateTime ?? this.dateTime,
       suggestedCategoryId: suggestedCategoryId ?? this.suggestedCategoryId,
-      suggestedCategoryName: suggestedCategoryName ?? this.suggestedCategoryName,
+      suggestedCategoryName:
+          suggestedCategoryName ?? this.suggestedCategoryName,
       lineItems: lineItems ?? this.lineItems,
       rawText: rawText ?? this.rawText,
       currency: currency ?? this.currency,

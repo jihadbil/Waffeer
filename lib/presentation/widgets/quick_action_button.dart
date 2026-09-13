@@ -5,7 +5,6 @@ class QuickActionButton extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
-
   const QuickActionButton({
     super.key,
     required this.icon,
@@ -13,43 +12,24 @@ class QuickActionButton extends StatelessWidget {
     required this.color,
     required this.onTap,
   });
-
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+    final colors = Theme.of(context).colorScheme;
+    return TextButton(
+      onPressed: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.all(14),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: isDark ? 0.2 : 0.12),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: color.withValues(alpha: 0.3),
-                width: 1,
-              ),
+              color: colors.primaryContainer,
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 24,
-            ),
+            child: Icon(icon, color: colors.onPrimaryContainer),
           ),
           const SizedBox(height: 8),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Theme.of(context).textTheme.bodyLarge?.color,
-            ),
-            textAlign: TextAlign.center,
-          ),
+          Text(label, textAlign: TextAlign.center),
         ],
       ),
     );

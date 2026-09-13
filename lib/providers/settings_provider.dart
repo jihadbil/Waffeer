@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../core/constants/currencies.dart';
 import '../core/services/notification_service.dart';
 
@@ -12,15 +13,20 @@ class SettingsProvider with ChangeNotifier {
   static const String _keyReminderEnabled = 'reminder_enabled';
   static const String _keyReminderHour = 'reminder_hour';
   static const String _keyReminderMinute = 'reminder_minute';
+  static const String _keyAiApiKey = 'gemini_api_key';
+  static const String _keyAiEnabled = 'ai_features_enabled';
+  static const String defaultAiApiKey = '';
 
   ThemeMode _themeMode = ThemeMode.system;
   String _currencyCode = 'USD';
   Locale _locale = const Locale('ar');
   bool _isBiometricsEnabled = false;
   bool _isFirstLaunch = true;
-  bool _isDailyReminderEnabled = true;
+  bool _isDailyReminderEnabled = false;
   int _reminderHour = 20; // 8:00 PM
   int _reminderMinute = 0;
+  String _aiApiKey = defaultAiApiKey;
+  bool _isAiEnabled = true;
   bool _isLoading = true;
 
   ThemeMode get themeMode => _themeMode;
@@ -33,6 +39,8 @@ class SettingsProvider with ChangeNotifier {
   bool get isDailyReminderEnabled => _isDailyReminderEnabled;
   int get reminderHour => _reminderHour;
   int get reminderMinute => _reminderMinute;
+  String get aiApiKey => _aiApiKey;
+  bool get isAiEnabled => _isAiEnabled;
   bool get isLoading => _isLoading;
 
   SettingsProvider() {
@@ -66,9 +74,25 @@ class SettingsProvider with ChangeNotifier {
     _isFirstLaunch = prefs.getBool(_keyFirstLaunch) ?? true;
 
     // Daily Reminder
-    _isDailyReminderEnabled = prefs.getBool(_keyReminderEnabled) ?? true;
+    _isDailyReminderEnabled = prefs.getBool(_keyReminderEnabled) ?? false;
     _reminderHour = prefs.getInt(_keyReminderHour) ?? 20;
     _reminderMinute = prefs.getInt(_keyReminderMinute) ?? 0;
+
+    // Refresh the next occurrence whenever the app starts. This keeps an
+    // already-approved reminder aligned with the device's current wall time
+    // without prompting for permission again.
+    if (_isDailyReminderEnabled) {
+      await NotificationService.instance.scheduleDailyReminder(
+        hour: _reminderHour,
+        minute: _reminderMinute,
+        isArabic: isArabic,
+        requestPermission: false,
+      );
+    }
+
+    // AI Settings
+    _aiApiKey = prefs.getString(_keyAiApiKey) ?? defaultAiApiKey;
+    _isAiEnabled = prefs.getBool(_keyAiEnabled) ?? true;
 
     _isLoading = false;
     notifyListeners();
@@ -78,7 +102,12 @@ class SettingsProvider with ChangeNotifier {
     _themeMode = mode;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyThemeMode, mode == ThemeMode.dark ? 'dark' : (mode == ThemeMode.light ? 'light' : 'system'));
+    await prefs.setString(
+      _keyThemeMode,
+      mode == ThemeMode.dark
+          ? 'dark'
+          : (mode == ThemeMode.light ? 'light' : 'system'),
+    );
   }
 
   Future<void> setCurrency(String code) async {
@@ -102,21 +131,24 @@ class SettingsProvider with ChangeNotifier {
     await prefs.setBool(_keyBiometrics, enabled);
   }
 
-  Future<void> setDailyReminderEnabled(bool enabled) async {
+  Future<bool> setDailyReminderEnabled(bool enabled) async {
+    if (enabled) {
+      final scheduled = await NotificationService.instance
+          .scheduleDailyReminder(
+            hour: _reminderHour,
+            minute: _reminderMinute,
+            isArabic: isArabic,
+          );
+      if (!scheduled) return false;
+    } else {
+      await NotificationService.instance.cancelDailyReminder();
+    }
+
     _isDailyReminderEnabled = enabled;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyReminderEnabled, enabled);
-
-    if (enabled) {
-      await NotificationService.instance.scheduleDailyReminder(
-        hour: _reminderHour,
-        minute: _reminderMinute,
-        isArabic: isArabic,
-      );
-    } else {
-      await NotificationService.instance.cancelAll();
-    }
+    return true;
   }
 
   Future<void> setReminderTime(int hour, int minute) async {
@@ -143,5 +175,19 @@ class SettingsProvider with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyCurrency, chosenCurrency);
     await prefs.setBool(_keyFirstLaunch, false);
+  }
+
+  Future<void> setAiApiKey(String key) async {
+    _aiApiKey = key.trim();
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyAiApiKey, _aiApiKey);
+  }
+
+  Future<void> setAiEnabled(bool enabled) async {
+    _isAiEnabled = enabled;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyAiEnabled, enabled);
   }
 }

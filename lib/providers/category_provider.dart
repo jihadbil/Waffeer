@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+
 import '../../core/database/db_helper.dart';
 import '../../data/models/category_model.dart';
 
 class CategoryProvider with ChangeNotifier {
-  final DatabaseHelper _dbHelper = DatabaseHelper.instance;
+  final DatabaseHelper _dbHelper;
+  CategoryProvider({DatabaseHelper? database})
+    : _dbHelper = database ?? DatabaseHelper.instance;
   List<CategoryModel> _categories = [];
   bool _isLoading = true;
 

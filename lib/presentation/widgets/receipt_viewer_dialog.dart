@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -6,11 +7,7 @@ class ReceiptViewerDialog extends StatelessWidget {
   final String imagePath;
   final String? title;
 
-  const ReceiptViewerDialog({
-    super.key,
-    required this.imagePath,
-    this.title,
-  });
+  const ReceiptViewerDialog({super.key, required this.imagePath, this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -41,15 +38,16 @@ class ReceiptViewerDialog extends StatelessWidget {
             ? InteractiveViewer(
                 minScale: 0.5,
                 maxScale: 4.0,
-                child: Image.file(
-                  file,
-                  fit: BoxFit.contain,
-                ),
+                child: Image.file(file, fit: BoxFit.contain),
               )
             : const Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.broken_image_rounded, color: Colors.white54, size: 64),
+                  Icon(
+                    Icons.broken_image_rounded,
+                    color: Colors.white54,
+                    size: 64,
+                  ),
                   SizedBox(height: 12),
                   Text(
                     'تعذر العثور على صورة الفاتورة',
