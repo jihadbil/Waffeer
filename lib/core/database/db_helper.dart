@@ -1,18 +1,39 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
+import 'package:uuid/uuid.dart';
+
 import '../../data/models/category_model.dart';
 import '../../data/models/wallet_model.dart';
 import '../../data/models/transaction_model.dart';
-import '../../data/models/recurring_transaction_model.dart';
 import '../../data/models/budget_model.dart';
 import '../../data/models/goal_model.dart';
 import '../../data/models/debt_model.dart';
+import '../../data/models/routine_expense_model.dart';
+
+part 'routine_database.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
-  static Database? _database;
+  Database? _database;
 
   DatabaseHelper._init();
+
+  /// Isolated database connection for integration tests and desktop tooling.
+  static Future<DatabaseHelper> openAt(
+    DatabaseFactory factory,
+    String path,
+  ) async {
+    final helper = DatabaseHelper._init();
+    helper._database = await factory.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: 5,
+        onCreate: helper._createDB,
+        onUpgrade: helper._upgradeDB,
+      ),
+    );
+    return helper;
+  }
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -26,7 +47,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 5,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
     );
@@ -154,6 +175,47 @@ class DatabaseHelper {
       )
     ''');
 
+    // Routine Expenses Table
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS routine_expenses (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        amount REAL NOT NULL,
+        category_id TEXT NOT NULL,
+        wallet_id TEXT NOT NULL,
+        note TEXT,
+        icon_code_point INTEGER,
+        color_value INTEGER,
+        is_auto_recurring INTEGER NOT NULL DEFAULT 0,
+        frequency TEXT NOT NULL DEFAULT 'manual',
+        interval_days INTEGER NOT NULL DEFAULT 2,
+        next_due_date TEXT,
+        last_executed_date TEXT,
+        usage_count INTEGER NOT NULL DEFAULT 0,
+        currency_code TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1
+      )
+    ''');
+
+    await _upgradeRoutineSchema(db);
+
+    // Performance Indexes
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_transactions_datetime ON transactions(date_time DESC)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_transactions_wallet ON transactions(wallet_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_budgets_category ON budgets(category_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_debts_due_date ON debts(due_date)',
+    );
+
     // Seed default categories
     for (final cat in CategoryModel.defaultCategories) {
       await db.insert('categories', cat.toMap());
@@ -181,12 +243,56 @@ class DatabaseHelper {
         )
       ''');
     }
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS routine_expenses (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          amount REAL NOT NULL,
+          category_id TEXT NOT NULL,
+          wallet_id TEXT NOT NULL,
+          note TEXT,
+          icon_code_point INTEGER,
+          color_value INTEGER,
+          is_auto_recurring INTEGER NOT NULL DEFAULT 0,
+          frequency TEXT NOT NULL DEFAULT 'manual',
+          interval_days INTEGER NOT NULL DEFAULT 2,
+          next_due_date TEXT,
+          last_executed_date TEXT,
+          usage_count INTEGER NOT NULL DEFAULT 0,
+          currency_code TEXT NOT NULL,
+          is_active INTEGER NOT NULL DEFAULT 1
+        )
+      ''');
+    }
+    if (oldVersion < 4) await _upgradeRoutineSchema(db);
+    if (oldVersion < 5) {
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_transactions_datetime ON transactions(date_time DESC)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_transactions_wallet ON transactions(wallet_id)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_budgets_category ON budgets(category_id)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_debts_due_date ON debts(due_date)',
+      );
+    }
   }
 
   // Seed default wallets when currency is set by user
   Future<void> seedDefaultWalletsIfEmpty(String currencyCode) async {
-    final db = await instance.database;
-    final count = Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM wallets')) ?? 0;
+    final db = await database;
+    final count =
+        Sqflite.firstIntValue(
+          await db.rawQuery('SELECT COUNT(*) FROM wallets'),
+        ) ??
+        0;
     if (count == 0) {
       for (final wallet in WalletModel.defaultWallets(currencyCode)) {
         await db.insert('wallets', wallet.toMap());
@@ -196,294 +302,300 @@ class DatabaseHelper {
 
   // ---------------- CATEGORIES CRUD ----------------
   Future<List<CategoryModel>> getAllCategories() async {
-    final db = await instance.database;
+    final db = await database;
     final result = await db.query('categories');
     return result.map((json) => CategoryModel.fromMap(json)).toList();
   }
 
   Future<int> insertCategory(CategoryModel category) async {
-    final db = await instance.database;
-    return await db.insert('categories', category.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final db = await database;
+    return await db.insert(
+      'categories',
+      category.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<int> updateCategory(CategoryModel category) async {
-    final db = await instance.database;
-    return await db.update('categories', category.toMap(), where: 'id = ?', whereArgs: [category.id]);
+    final db = await database;
+    return await db.update(
+      'categories',
+      category.toMap(),
+      where: 'id = ?',
+      whereArgs: [category.id],
+    );
   }
 
   Future<int> deleteCategory(String id) async {
-    final db = await instance.database;
-    return await db.delete('categories', where: 'id = ?', whereArgs: [id]);
+    final db = await database;
+    return db.transaction((txn) async {
+      await txn.update(
+        'routine_expenses',
+        {'is_active': 0},
+        where: 'category_id = ?',
+        whereArgs: [id],
+      );
+      return txn.delete('categories', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   // ---------------- WALLETS CRUD ----------------
   Future<List<WalletModel>> getAllWallets() async {
-    final db = await instance.database;
+    final db = await database;
     final result = await db.query('wallets');
     return result.map((json) => WalletModel.fromMap(json)).toList();
   }
 
   Future<int> insertWallet(WalletModel wallet) async {
-    final db = await instance.database;
-    return await db.insert('wallets', wallet.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final db = await database;
+    return await db.insert(
+      'wallets',
+      wallet.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<int> updateWallet(WalletModel wallet) async {
-    final db = await instance.database;
-    return await db.update('wallets', wallet.toMap(), where: 'id = ?', whereArgs: [wallet.id]);
+    final db = await database;
+    return await db.update(
+      'wallets',
+      wallet.toMap(),
+      where: 'id = ?',
+      whereArgs: [wallet.id],
+    );
   }
 
   Future<int> deleteWallet(String id) async {
-    final db = await instance.database;
-    return await db.delete('wallets', where: 'id = ?', whereArgs: [id]);
+    final db = await database;
+    return db.transaction((txn) async {
+      await txn.update(
+        'routine_expenses',
+        {'is_active': 0},
+        where: 'wallet_id = ? OR to_wallet_id = ?',
+        whereArgs: [id, id],
+      );
+      return txn.delete('wallets', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   // ---------------- TRANSACTIONS CRUD ----------------
   Future<List<TransactionModel>> getAllTransactions() async {
-    final db = await instance.database;
+    final db = await database;
     final result = await db.query('transactions', orderBy: 'date_time DESC');
     return result.map((json) => TransactionModel.fromMap(json)).toList();
   }
 
   Future<int> insertTransaction(TransactionModel tx) async {
-    final db = await instance.database;
-    return await db.transaction((txn) async {
-      final id = await txn.insert('transactions', tx.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-
-      // Update Wallet Balance
-      if (tx.type == TransactionType.expense) {
-        await txn.rawUpdate(
-          'UPDATE wallets SET current_balance = current_balance - ? WHERE id = ?',
-          [tx.amount, tx.walletId],
-        );
-      } else if (tx.type == TransactionType.income) {
-        await txn.rawUpdate(
-          'UPDATE wallets SET current_balance = current_balance + ? WHERE id = ?',
-          [tx.amount, tx.walletId],
-        );
-      } else if (tx.type == TransactionType.transfer && tx.toWalletId != null) {
-        await txn.rawUpdate(
-          'UPDATE wallets SET current_balance = current_balance - ? WHERE id = ?',
-          [tx.amount, tx.walletId],
-        );
-        await txn.rawUpdate(
-          'UPDATE wallets SET current_balance = current_balance + ? WHERE id = ?',
-          [tx.amount, tx.toWalletId],
-        );
-      }
-      return id;
+    final db = await database;
+    return db.transaction((txn) async {
+      final inserted = await _insertMoney(txn, tx);
+      if (inserted != 0) await _restoreRoutineExecution(txn, tx.id);
+      return inserted;
     });
   }
 
   Future<int> deleteTransaction(TransactionModel tx) async {
-    final db = await instance.database;
-    return await db.transaction((txn) async {
-      // Revert wallet balance changes
-      if (tx.type == TransactionType.expense) {
-        await txn.rawUpdate(
-          'UPDATE wallets SET current_balance = current_balance + ? WHERE id = ?',
-          [tx.amount, tx.walletId],
-        );
-      } else if (tx.type == TransactionType.income) {
-        await txn.rawUpdate(
-          'UPDATE wallets SET current_balance = current_balance - ? WHERE id = ?',
-          [tx.amount, tx.walletId],
-        );
-      } else if (tx.type == TransactionType.transfer && tx.toWalletId != null) {
-        await txn.rawUpdate(
-          'UPDATE wallets SET current_balance = current_balance + ? WHERE id = ?',
-          [tx.amount, tx.walletId],
-        );
-        await txn.rawUpdate(
-          'UPDATE wallets SET current_balance = current_balance - ? WHERE id = ?',
-          [tx.amount, tx.toWalletId],
-        );
-      }
-
-      return await txn.delete('transactions', where: 'id = ?', whereArgs: [tx.id]);
+    final db = await database;
+    return db.transaction((txn) async {
+      final rows = await txn.query(
+        'transactions',
+        where: 'id = ?',
+        whereArgs: [tx.id],
+      );
+      if (rows.isEmpty) return 0;
+      await _applyMoney(txn, TransactionModel.fromMap(rows.first), -1);
+      await _reverseRoutineExecution(txn, tx.id);
+      return txn.delete('transactions', where: 'id = ?', whereArgs: [tx.id]);
     });
   }
 
-  // ---------------- RECURRING TRANSACTIONS CRUD ----------------
-  Future<List<RecurringTransactionModel>> getAllRecurring() async {
-    final db = await instance.database;
-    final result = await db.query('recurring_transactions', orderBy: 'next_due_date ASC');
-    return result.map((json) => RecurringTransactionModel.fromMap(json)).toList();
+  // ---------------- ROUTINE EXPENSES CRUD ----------------
+  Future<List<RoutineExpenseModel>> getAllRoutineExpenses() async {
+    final db = await database;
+    final result = await db.query(
+      'routine_expenses',
+      orderBy: 'usage_count DESC, title ASC',
+    );
+    return result.map((json) => RoutineExpenseModel.fromMap(json)).toList();
   }
 
-  Future<int> insertRecurring(RecurringTransactionModel rec) async {
-    final db = await instance.database;
-    return await db.insert('recurring_transactions', rec.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
-  }
-
-  Future<int> updateRecurring(RecurringTransactionModel rec) async {
-    final db = await instance.database;
-    return await db.update('recurring_transactions', rec.toMap(), where: 'id = ?', whereArgs: [rec.id]);
-  }
-
-  Future<int> deleteRecurring(String id) async {
-    final db = await instance.database;
-    return await db.delete('recurring_transactions', where: 'id = ?', whereArgs: [id]);
+  Future<int> deleteRoutineExpense(String id) async {
+    final db = await database;
+    return await db.delete(
+      'routine_expenses',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   // ---------------- BUDGETS CRUD ----------------
   Future<List<BudgetModel>> getAllBudgets() async {
-    final db = await instance.database;
+    final db = await database;
     final result = await db.query('budgets');
     return result.map((json) => BudgetModel.fromMap(json)).toList();
   }
 
   Future<int> insertBudget(BudgetModel budget) async {
-    final db = await instance.database;
-    return await db.insert('budgets', budget.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final db = await database;
+    return await db.insert(
+      'budgets',
+      budget.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<int> updateBudget(BudgetModel budget) async {
-    final db = await instance.database;
-    return await db.update('budgets', budget.toMap(), where: 'id = ?', whereArgs: [budget.id]);
+    final db = await database;
+    return await db.update(
+      'budgets',
+      budget.toMap(),
+      where: 'id = ?',
+      whereArgs: [budget.id],
+    );
   }
 
   Future<int> deleteBudget(String id) async {
-    final db = await instance.database;
+    final db = await database;
     return await db.delete('budgets', where: 'id = ?', whereArgs: [id]);
   }
 
   // ---------------- GOALS CRUD ----------------
   Future<List<GoalModel>> getAllGoals() async {
-    final db = await instance.database;
+    final db = await database;
     final result = await db.query('goals');
     return result.map((json) => GoalModel.fromMap(json)).toList();
   }
 
   Future<int> insertGoal(GoalModel goal) async {
-    final db = await instance.database;
-    return await db.insert('goals', goal.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final db = await database;
+    return await db.insert(
+      'goals',
+      goal.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<int> updateGoal(GoalModel goal) async {
-    final db = await instance.database;
-    return await db.update('goals', goal.toMap(), where: 'id = ?', whereArgs: [goal.id]);
+    final db = await database;
+    return await db.update(
+      'goals',
+      goal.toMap(),
+      where: 'id = ?',
+      whereArgs: [goal.id],
+    );
   }
 
   Future<int> deleteGoal(String id) async {
-    final db = await instance.database;
+    final db = await database;
     return await db.delete('goals', where: 'id = ?', whereArgs: [id]);
   }
 
   // ---------------- DEBTS CRUD ----------------
   Future<List<DebtModel>> getAllDebts() async {
-    final db = await instance.database;
+    final db = await database;
     final result = await db.query('debts', orderBy: 'due_date ASC');
     return result.map((json) => DebtModel.fromMap(json)).toList();
   }
 
   Future<int> insertDebt(DebtModel debt) async {
-    final db = await instance.database;
-    return await db.insert('debts', debt.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final db = await database;
+    return await db.insert(
+      'debts',
+      debt.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
   Future<int> updateDebt(DebtModel debt) async {
-    final db = await instance.database;
-    return await db.update('debts', debt.toMap(), where: 'id = ?', whereArgs: [debt.id]);
+    final db = await database;
+    return await db.update(
+      'debts',
+      debt.toMap(),
+      where: 'id = ?',
+      whereArgs: [debt.id],
+    );
   }
 
   Future<int> deleteDebt(String id) async {
-    final db = await instance.database;
+    final db = await database;
     return await db.delete('debts', where: 'id = ?', whereArgs: [id]);
   }
 
   // ---------------- FULL BACKUP & RESTORE ----------------
   Future<Map<String, dynamic>> exportFullDatabase() async {
-    final db = await instance.database;
-
-    final categories = await db.query('categories');
-    final wallets = await db.query('wallets');
-    final transactions = await db.query('transactions');
-    final recurring = await db.query('recurring_transactions');
-    final budgets = await db.query('budgets');
-    final goals = await db.query('goals');
-    final debts = await db.query('debts');
-
-    return {
-      'app': 'Waffeer',
-      'version': '1.0.0',
-      'schema_version': 2,
-      'exported_at': DateTime.now().toIso8601String(),
-      'data': {
-        'categories': categories,
-        'wallets': wallets,
-        'transactions': transactions,
-        'recurring_transactions': recurring,
-        'budgets': budgets,
-        'goals': goals,
-        'debts': debts,
+    final db = await database;
+    return db.transaction((txn) async {
+      final data = <String, dynamic>{};
+      for (final table in [
+        'categories',
+        'wallets',
+        'transactions',
+        'routine_expenses',
+        'routine_executions',
+        'budgets',
+        'goals',
+        'debts',
+      ]) {
+        data[table] = await txn.query(table);
       }
-    };
+      return {
+        'app': 'Waffeer',
+        'version': '2.0.0',
+        'schema_version': 4,
+        'exported_at': DateTime.now().toIso8601String(),
+        'data': data,
+      };
+    });
   }
 
   Future<bool> importFullDatabase(Map<String, dynamic> backupData) async {
-    final db = await instance.database;
+    final db = await database;
+    if (backupData['app'] != 'Waffeer' ||
+        (backupData['schema_version'] as int? ?? 1) > 4) {
+      throw const FormatException('Unsupported backup');
+    }
     final data = backupData['data'] as Map<String, dynamic>?;
     if (data == null) return false;
-
-    return await db.transaction((txn) async {
-      // 1. Clear existing tables
-      await txn.delete('transactions');
-      await txn.delete('recurring_transactions');
-      await txn.delete('budgets');
-      await txn.delete('goals');
-      await txn.delete('debts');
-      await txn.delete('wallets');
-      await txn.delete('categories');
-
-      // 2. Import categories
-      final categories = (data['categories'] as List<dynamic>?) ?? [];
-      for (final item in categories) {
-        await txn.insert('categories', Map<String, dynamic>.from(item as Map));
+    return db.transaction((txn) async {
+      for (final table in [
+        'routine_executions',
+        'routine_expenses',
+        'transactions',
+        'recurring_transactions',
+        'budgets',
+        'goals',
+        'debts',
+        'wallets',
+        'categories',
+      ]) {
+        await txn.delete(table);
       }
-
-      // 3. Import wallets
-      final wallets = (data['wallets'] as List<dynamic>?) ?? [];
-      for (final item in wallets) {
-        await txn.insert('wallets', Map<String, dynamic>.from(item as Map));
+      for (final table in [
+        'categories',
+        'wallets',
+        'transactions',
+        'budgets',
+        'goals',
+        'debts',
+        'routine_expenses',
+        'routine_executions',
+        'recurring_transactions',
+      ]) {
+        for (final item in (data[table] as List<dynamic>? ?? [])) {
+          var row = Map<String, dynamic>.from(item as Map);
+          if (table == 'routine_expenses') {
+            row = RoutineExpenseModel.fromMap(row).toMap();
+          }
+          await txn.insert(table, row);
+        }
       }
-
-      // 4. Import transactions
-      final transactions = (data['transactions'] as List<dynamic>?) ?? [];
-      for (final item in transactions) {
-        await txn.insert('transactions', Map<String, dynamic>.from(item as Map));
-      }
-
-      // 5. Import recurring
-      final recurring = (data['recurring_transactions'] as List<dynamic>?) ?? [];
-      for (final item in recurring) {
-        await txn.insert('recurring_transactions', Map<String, dynamic>.from(item as Map));
-      }
-
-      // 6. Import budgets
-      final budgets = (data['budgets'] as List<dynamic>?) ?? [];
-      for (final item in budgets) {
-        await txn.insert('budgets', Map<String, dynamic>.from(item as Map));
-      }
-
-      // 7. Import goals
-      final goals = (data['goals'] as List<dynamic>?) ?? [];
-      for (final item in goals) {
-        await txn.insert('goals', Map<String, dynamic>.from(item as Map));
-      }
-
-      // 8. Import debts
-      final debts = (data['debts'] as List<dynamic>?) ?? [];
-      for (final item in debts) {
-        await txn.insert('debts', Map<String, dynamic>.from(item as Map));
-      }
-
+      await _migrateLegacySchedules(txn);
       return true;
     });
   }
 
   Future<void> close() async {
-    final db = await instance.database;
-    db.close();
+    await _database?.close();
+    _database = null;
   }
 }

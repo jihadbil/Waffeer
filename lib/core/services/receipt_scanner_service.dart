@@ -1,24 +1,47 @@
 import 'dart:io';
+
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
+
+import '../../data/models/category_model.dart';
 import '../../data/models/receipt_model.dart';
+import 'ai_service.dart';
 
 /// خدمة التعرف الضوئي على النصوص (OCR) والتحليل الذكي لبيانات الفواتير والإيصالات
 ///
-/// تستخدم هذه الخدمة مكتبة Google ML Kit لمعالجة الصور محلياً على جهاز المستخدم (On-Device)
-/// بدون الحاجة لاتصال بالإنترنت، مع تطبيق خوارزميات ذكية لاستخراج:
-/// - المبلغ الإجمالي (Total Amount)
-/// - ضريبة القيمة المضافة (VAT)
-/// - اسم المتجر / المحل (Merchant Name)
-/// - تاريخ ووقت الفاتورة (Date & Time)
-/// - اقتراح التصنيف المناسب (Category Prediction)
-/// - قائمة البنود والأسعار (Line Items)
+/// تستخدم هذه الخدمة نموذج Gemini Vision فائق الذكاء عند توفر المفتاح، مع التراجع التلقائي
+/// لمحرك Google ML Kit محلياً على جهاز المستخدم (On-Device) عند انقطاع الاتصال
 class ReceiptScannerService {
   // تطبيق نمط Singleton لضمان وجود نسخة واحدة فقط من الخدمة
   ReceiptScannerService._();
   static final ReceiptScannerService instance = ReceiptScannerService._();
 
+  /// نسخ ملف الصورة الملتقطة من المجلد المؤقت إلى مجلد المستندات الدائم للتطبيق
+  static Future<String> persistReceiptImage(String tempPath) async {
+    try {
+      final file = File(tempPath);
+      if (!await file.exists()) return tempPath;
+
+      final appDir = await getApplicationDocumentsDirectory();
+      final receiptsDir = Directory('${appDir.path}/receipts');
+      if (!await receiptsDir.exists()) {
+        await receiptsDir.create(recursive: true);
+      }
+      final extension = tempPath.split('.').last;
+      final fileName =
+          'receipt_${DateTime.now().millisecondsSinceEpoch}_${const Uuid().v4().substring(0, 8)}.$extension';
+      final permanentFile = await file.copy('${receiptsDir.path}/$fileName');
+      return permanentFile.path;
+    } catch (_) {
+      return tempPath;
+    }
+  }
+
   /// محرك التعرف الضوئي على النصوص من Google ML Kit
-  final TextRecognizer _textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
+  final TextRecognizer _textRecognizer = TextRecognizer(
+    script: TextRecognitionScript.latin,
+  );
 
   /// إغلاق وتحرير موارد محرك ML Kit عند عدم الحاجة إليه
   void dispose() {
@@ -27,11 +50,35 @@ class ReceiptScannerService {
 
   /// معالجة ملف صورة الفاتورة واستخراج البيانات المهيكلة منها
   ///
-  /// تأخذ [imageFile] وتمررها لمحرك التعرف الضوئي ثم ترسل النصوص المستخرجة لمحلل الفواتير
-  Future<ParsedReceipt> scanReceipt(File imageFile) async {
-    // 1. تجهيز الصورة لمحرك ML Kit
+  /// تحاول أولاً استخدام Gemini Vision لاستخراج دقيق للبنود والضريبة، ثم تتراجع لـ ML Kit
+  Future<ParsedReceipt> scanReceipt(
+    File imageFile, {
+    String? apiKey,
+    List<CategoryModel>? categories,
+    bool isArabic = true,
+  }) async {
+    // 1. محاولة التحليل بالرؤية الحاسوبية Gemini Vision إن توفر المفتاح
+    if (apiKey != null && apiKey.trim().isNotEmpty) {
+      try {
+        final geminiParsed = await AiService.instance.scanReceiptWithVision(
+          apiKey: apiKey.trim(),
+          imageFile: imageFile,
+          categories: categories ?? [],
+          isArabic: isArabic,
+        );
+        if (geminiParsed != null && geminiParsed.totalAmount != null) {
+          return geminiParsed;
+        }
+      } catch (_) {
+        // التراجع التلقائي إلى ML Kit المحلي
+      }
+    }
+
+    // 2. تجهيز الصورة لمحرك ML Kit كبديل محلي
     final inputImage = InputImage.fromFile(imageFile);
-    final RecognizedText recognizedText = await _textRecognizer.processImage(inputImage);
+    final RecognizedText recognizedText = await _textRecognizer.processImage(
+      inputImage,
+    );
 
     final rawText = recognizedText.text;
     final blocks = recognizedText.blocks;
@@ -48,7 +95,11 @@ class ReceiptScannerService {
     }
 
     // 3. تحليل النصوص المستخرجة
-    return parseReceiptText(rawText: rawText, lines: allLines, imagePath: imageFile.path);
+    return parseReceiptText(
+      rawText: rawText,
+      lines: allLines,
+      imagePath: imageFile.path,
+    );
   }
 
   /// تحليل الأسطر النصية الخام وتحويلها إلى كائن فاتورة مهيكل [ParsedReceipt]
@@ -203,7 +254,9 @@ class ReceiptScannerService {
       final lower = line.toLowerCase();
 
       final isNormalKeyword = normalKeywords.any((kw) => lower.contains(kw));
-      final isSubtotalOrTax = taxOrSubtotalKeywords.any((kw) => lower.contains(kw));
+      final isSubtotalOrTax = taxOrSubtotalKeywords.any(
+        (kw) => lower.contains(kw),
+      );
 
       if (isNormalKeyword && !isSubtotalOrTax) {
         // محاولة استخراج الرقم من نفس السطر
@@ -232,7 +285,11 @@ class ReceiptScannerService {
       final amounts = _findAllAmountsInLine(line);
       for (final amt in amounts) {
         // استبعاد أرقام السنوات (2024, 2025, 2026) وأرقام الهواتف والقيم الشاذة
-        if (amt > 0.5 && amt < 50000 && amt != 2024 && amt != 2025 && amt != 2026) {
+        if (amt > 0.5 &&
+            amt < 50000 &&
+            amt != 2024 &&
+            amt != 2025 &&
+            amt != 2026) {
           fallbackCandidates.add(amt);
         }
       }
@@ -259,7 +316,9 @@ class ReceiptScannerService {
   List<double> _findAllAmountsInLine(String line) {
     final List<double> results = [];
     // تعبير نمطي لمطابقة أنماط الأرقام مثل: 125.50, 1,250.00, 1250,50, 45.0, 99
-    final regex = RegExp(r'(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})|\d+(?:[\.,]\d{1,2})|\b\d{1,5}\b)');
+    final regex = RegExp(
+      r'(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})|\d+(?:[\.,]\d{1,2})|\b\d{1,5}\b)',
+    );
     final matches = regex.allMatches(line);
 
     for (final match in matches) {
@@ -304,7 +363,9 @@ class ReceiptScannerService {
       final lower = line.toLowerCase();
       for (final kw in taxKeywords) {
         // استبعاد نسب الضريبة المئوية مثل 15% أو 5%
-        if (lower.contains(kw) && !lower.contains('15%') && !lower.contains('5%')) {
+        if (lower.contains(kw) &&
+            !lower.contains('15%') &&
+            !lower.contains('5%')) {
           final amt = _parseAmountFromLine(line);
           if (amt != null && amt > 0 && amt < 10000) {
             return amt;
@@ -318,10 +379,18 @@ class ReceiptScannerService {
   /// استخراج التاريخ والوقت من أسطر الفاتورة
   DateTime? _extractDateTime(List<String> lines) {
     // تعابير نمطية لمختلف صيغ التواريخ الشائعة
-    final ymdRegex = RegExp(r'(\b20\d{2})[-/. ](0?[1-9]|1[0-2])[-/. ](0?[1-9]|[12]\d|3[01])\b');
-    final dmyRegex = RegExp(r'\b(0?[1-9]|[12]\d|3[01])[-/. ](0?[1-9]|1[0-2])[-/. ](20\d{2})\b');
-    final dmyShortRegex = RegExp(r'\b(0?[1-9]|[12]\d|3[01])[-/. ](0?[1-9]|1[0-2])[-/. ](\d{2})\b');
-    final timeRegex = RegExp(r'\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?(?:\s*(AM|PM|am|pm|ص|م))?\b');
+    final ymdRegex = RegExp(
+      r'(\b20\d{2})[-/. ](0?[1-9]|1[0-2])[-/. ](0?[1-9]|[12]\d|3[01])\b',
+    );
+    final dmyRegex = RegExp(
+      r'\b(0?[1-9]|[12]\d|3[01])[-/. ](0?[1-9]|1[0-2])[-/. ](20\d{2})\b',
+    );
+    final dmyShortRegex = RegExp(
+      r'\b(0?[1-9]|[12]\d|3[01])[-/. ](0?[1-9]|1[0-2])[-/. ](\d{2})\b',
+    );
+    final timeRegex = RegExp(
+      r'\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?(?:\s*(AM|PM|am|pm|ص|م))?\b',
+    );
 
     int? year, month, day, hour, minute;
 
@@ -457,7 +526,8 @@ class ReceiptScannerService {
     }
 
     // خطة احتياطية: إرجاع السطر الأول إن لم يكن رقماً خالصاً
-    if (originalLines.isNotEmpty && !RegExp(r'^[\d\s\-\.\/:\+,=]+$').hasMatch(originalLines.first)) {
+    if (originalLines.isNotEmpty &&
+        !RegExp(r'^[\d\s\-\.\/:\+,=]+$').hasMatch(originalLines.first)) {
       return originalLines.first.trim();
     }
 
@@ -470,12 +540,53 @@ class ReceiptScannerService {
 
     // 1. تصنيف: طعام ومطاعم (Food & Dining)
     final foodKeywords = [
-      'restaurant', 'cafe', 'coffee', 'burger', 'pizza', 'shawarma', 'bakery',
-      'kitchen', 'diner', 'grill', 'sushi', 'fastfood', 'kfc', 'mcdonald', 'starbucks',
-      'dunkin', 'barn', 'java', 'caribou', 'tim hortons', 'maestro', 'domino',
-      'subway', 'hardees', 'albaik', 'مطعم', 'كافيه', 'مقهى', 'قهوة', 'برجر',
-      'بيتزا', 'شاورما', 'مخبز', 'بوفيه', 'حاشي', 'البيك', 'كودو', 'هرفي',
-      'بارنز', 'دانكن', 'ستاربكس', 'عصير', 'فطائر', 'مشويات', 'وجبات', 'كافتيريا', 'شاي'
+      'restaurant',
+      'cafe',
+      'coffee',
+      'burger',
+      'pizza',
+      'shawarma',
+      'bakery',
+      'kitchen',
+      'diner',
+      'grill',
+      'sushi',
+      'fastfood',
+      'kfc',
+      'mcdonald',
+      'starbucks',
+      'dunkin',
+      'barn',
+      'java',
+      'caribou',
+      'tim hortons',
+      'maestro',
+      'domino',
+      'subway',
+      'hardees',
+      'albaik',
+      'مطعم',
+      'كافيه',
+      'مقهى',
+      'قهوة',
+      'برجر',
+      'بيتزا',
+      'شاورما',
+      'مخبز',
+      'بوفيه',
+      'حاشي',
+      'البيك',
+      'كودو',
+      'هرفي',
+      'بارنز',
+      'دانكن',
+      'ستاربكس',
+      'عصير',
+      'فطائر',
+      'مشويات',
+      'وجبات',
+      'كافتيريا',
+      'شاي',
     ];
     if (foodKeywords.any((k) => lower.contains(k))) {
       return 'cat_food';
@@ -483,12 +594,46 @@ class ReceiptScannerService {
 
     // 2. تصنيف: تسوق ومقاضي وسوبرماركت (Shopping & Groceries)
     final shoppingKeywords = [
-      'supermarket', 'hypermarket', 'grocery', 'mart', 'market', 'panda', 'lulu',
-      'carrefour', 'othaim', 'tamimi', 'danube', 'bin dawood', 'extra', 'jarir',
-      'mall', 'store', 'retail', 'بقالة', 'تموينات', 'اسواق', 'أسواق', 'سوبرماركت',
-      'هايبرماركت', 'بنده', 'العثيم', 'التميمي', 'الدانوب', 'بن داود', 'كارفور',
-      'لولو', 'جرير', 'اكسترا', 'سنتربوينت', 'نون', 'امازون', 'تسوق', 'متجر',
-      'ملابس', 'احذية', 'أحذية'
+      'supermarket',
+      'hypermarket',
+      'grocery',
+      'mart',
+      'market',
+      'panda',
+      'lulu',
+      'carrefour',
+      'othaim',
+      'tamimi',
+      'danube',
+      'bin dawood',
+      'extra',
+      'jarir',
+      'mall',
+      'store',
+      'retail',
+      'بقالة',
+      'تموينات',
+      'اسواق',
+      'أسواق',
+      'سوبرماركت',
+      'هايبرماركت',
+      'بنده',
+      'العثيم',
+      'التميمي',
+      'الدانوب',
+      'بن داود',
+      'كارفور',
+      'لولو',
+      'جرير',
+      'اكسترا',
+      'سنتربوينت',
+      'نون',
+      'امازون',
+      'تسوق',
+      'متجر',
+      'ملابس',
+      'احذية',
+      'أحذية',
     ];
     if (shoppingKeywords.any((k) => lower.contains(k))) {
       return 'cat_shopping';
@@ -496,10 +641,38 @@ class ReceiptScannerService {
 
     // 3. تصنيف: مواصلات ومحروقات وبنزين (Transportation & Fuel)
     final transportKeywords = [
-      'fuel', 'gas', 'petrol', 'station', 'oil', 'diesel', 'sasco', 'aldrees',
-      'naft', 'petromin', 'totalenergies', 'uber', 'careem', 'bolt', 'taxi',
-      'parking', 'بنزين', 'محطة', 'وقود', 'ديزل', 'بترومين', 'الدريس', 'ساسكو',
-      'نفط', 'اوبر', 'كريم', 'بولت', 'تاكسي', 'مواقف', 'غسيل سيارات', 'زيت', 'كفرات'
+      'fuel',
+      'gas',
+      'petrol',
+      'station',
+      'oil',
+      'diesel',
+      'sasco',
+      'aldrees',
+      'naft',
+      'petromin',
+      'totalenergies',
+      'uber',
+      'careem',
+      'bolt',
+      'taxi',
+      'parking',
+      'بنزين',
+      'محطة',
+      'وقود',
+      'ديزل',
+      'بترومين',
+      'الدريس',
+      'ساسكو',
+      'نفط',
+      'اوبر',
+      'كريم',
+      'بولت',
+      'تاكسي',
+      'مواقف',
+      'غسيل سيارات',
+      'زيت',
+      'كفرات',
     ];
     if (transportKeywords.any((k) => lower.contains(k))) {
       return 'cat_transport';
@@ -507,9 +680,31 @@ class ReceiptScannerService {
 
     // 4. تصنيف: صحة وصيدليات وعلاج (Health & Medical)
     final healthKeywords = [
-      'pharmacy', 'medical', 'clinic', 'hospital', 'dental', 'pharma', 'nahdi',
-      'dawaa', 'optic', 'lab', 'صيدلية', 'مستشفى', 'عيادة', 'مجمع طبي', 'النهدي',
-      'الدواء', 'صيدليات', 'علاج', 'ادوية', 'أدوية', 'اسنان', 'أسنان', 'عيون', 'نظارات', 'مختبر'
+      'pharmacy',
+      'medical',
+      'clinic',
+      'hospital',
+      'dental',
+      'pharma',
+      'nahdi',
+      'dawaa',
+      'optic',
+      'lab',
+      'صيدلية',
+      'مستشفى',
+      'عيادة',
+      'مجمع طبي',
+      'النهدي',
+      'الدواء',
+      'صيدليات',
+      'علاج',
+      'ادوية',
+      'أدوية',
+      'اسنان',
+      'أسنان',
+      'عيون',
+      'نظارات',
+      'مختبر',
     ];
     if (healthKeywords.any((k) => lower.contains(k))) {
       return 'cat_health';
@@ -517,9 +712,30 @@ class ReceiptScannerService {
 
     // 5. تصنيف: فواتير ومرافق واتصالات (Bills & Utilities)
     final billsKeywords = [
-      'electric', 'electricity', 'sec', 'water', 'telecom', 'stc', 'mobily', 'zain',
-      'salam', 'redbull', 'internet', 'fiber', 'utility', 'bill', 'كهرباء', 'مياه',
-      'اتصالات', 'اس تي سي', 'موبايلي', 'زين', 'سلام', 'انترنت', 'شحن رصيد', 'فاتورة جوال'
+      'electric',
+      'electricity',
+      'sec',
+      'water',
+      'telecom',
+      'stc',
+      'mobily',
+      'zain',
+      'salam',
+      'redbull',
+      'internet',
+      'fiber',
+      'utility',
+      'bill',
+      'كهرباء',
+      'مياه',
+      'اتصالات',
+      'اس تي سي',
+      'موبايلي',
+      'زين',
+      'سلام',
+      'انترنت',
+      'شحن رصيد',
+      'فاتورة جوال',
     ];
     if (billsKeywords.any((k) => lower.contains(k))) {
       return 'cat_bills';
@@ -527,9 +743,31 @@ class ReceiptScannerService {
 
     // 6. تصنيف: ترفيه وأنشطة وسينما (Entertainment)
     final entertainmentKeywords = [
-      'cinema', 'movie', 'vox', 'muvi', 'empire', 'amc', 'games', 'park',
-      'resort', 'gym', 'fitness', 'bowling', 'سينما', 'فوكس', 'موفي', 'بولينج',
-      'ملاهي', 'العاب', 'ألعاب', 'منتجع', 'شاليه', 'نادي', 'جيم', 'لياقة', 'ترفيه'
+      'cinema',
+      'movie',
+      'vox',
+      'muvi',
+      'empire',
+      'amc',
+      'games',
+      'park',
+      'resort',
+      'gym',
+      'fitness',
+      'bowling',
+      'سينما',
+      'فوكس',
+      'موفي',
+      'بولينج',
+      'ملاهي',
+      'العاب',
+      'ألعاب',
+      'منتجع',
+      'شاليه',
+      'نادي',
+      'جيم',
+      'لياقة',
+      'ترفيه',
     ];
     if (entertainmentKeywords.any((k) => lower.contains(k))) {
       return 'cat_entertainment';
@@ -537,8 +775,23 @@ class ReceiptScannerService {
 
     // 7. تصنيف: سكن وإيجار وصيانة (Housing & Maintenance)
     final housingKeywords = [
-      'rent', 'lease', 'maintenance', 'plumbing', 'furniture', 'ikea', 'hardware',
-      'ايجار', 'إيجار', 'سكن', 'شقة', 'صيانة', 'سباكة', 'كهربائي', 'اثاث', 'أثاث', 'ايكيا'
+      'rent',
+      'lease',
+      'maintenance',
+      'plumbing',
+      'furniture',
+      'ikea',
+      'hardware',
+      'ايجار',
+      'إيجار',
+      'سكن',
+      'شقة',
+      'صيانة',
+      'سباكة',
+      'كهربائي',
+      'اثاث',
+      'أثاث',
+      'ايكيا',
     ];
     if (housingKeywords.any((k) => lower.contains(k))) {
       return 'cat_housing';
@@ -546,8 +799,21 @@ class ReceiptScannerService {
 
     // 8. تصنيف: تعليم وتطوير وتدريب (Education)
     final educationKeywords = [
-      'school', 'university', 'college', 'course', 'academy', 'training',
-      'مدرسة', 'جامعة', 'كلية', 'معهد', 'دورة', 'تدريب', 'كتب', 'مكتبة', 'قرطاسية'
+      'school',
+      'university',
+      'college',
+      'course',
+      'academy',
+      'training',
+      'مدرسة',
+      'جامعة',
+      'كلية',
+      'معهد',
+      'دورة',
+      'تدريب',
+      'كتب',
+      'مكتبة',
+      'قرطاسية',
     ];
     if (educationKeywords.any((k) => lower.contains(k))) {
       return 'cat_education';

@@ -1,8 +1,10 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/currencies.dart';
 import '../../../core/services/receipt_scanner_service.dart';
@@ -28,10 +30,7 @@ class ReceiptScannerScreen extends StatefulWidget {
   /// ملف الصورة المبدئي في حال تم تمريره من شاشة أخرى
   final File? initialImageFile;
 
-  const ReceiptScannerScreen({
-    super.key,
-    this.initialImageFile,
-  });
+  const ReceiptScannerScreen({super.key, this.initialImageFile});
 
   @override
   State<ReceiptScannerScreen> createState() => _ReceiptScannerScreenState();
@@ -86,7 +85,8 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final walletProvider = context.read<WalletProvider>();
       if (walletProvider.wallets.isNotEmpty) {
-        _selectedWalletId = walletProvider.defaultWallet?.id ?? walletProvider.wallets.first.id;
+        _selectedWalletId =
+            walletProvider.defaultWallet?.id ?? walletProvider.wallets.first.id;
       }
 
       if (widget.initialImageFile != null) {
@@ -137,7 +137,10 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
               const SizedBox(height: 18),
               Text(
                 isArabic ? 'مسح الفاتورة أو الإيصال' : 'Scan Receipt or Bill',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -166,11 +169,17 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                         decoration: BoxDecoration(
                           color: AppColors.primary.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.3),
+                          ),
                         ),
                         child: Column(
                           children: [
-                            const Icon(Icons.camera_alt_rounded, color: AppColors.primary, size: 36),
+                            const Icon(
+                              Icons.camera_alt_rounded,
+                              color: AppColors.primary,
+                              size: 36,
+                            ),
                             const SizedBox(height: 10),
                             Text(
                               isArabic ? 'التقاط بالكاميرا' : 'Camera',
@@ -198,11 +207,17 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                         decoration: BoxDecoration(
                           color: AppColors.secondary.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.secondary.withValues(alpha: 0.3)),
+                          border: Border.all(
+                            color: AppColors.secondary.withValues(alpha: 0.3),
+                          ),
                         ),
                         child: Column(
                           children: [
-                            const Icon(Icons.photo_library_rounded, color: AppColors.secondary, size: 36),
+                            const Icon(
+                              Icons.photo_library_rounded,
+                              color: AppColors.secondary,
+                              size: 36,
+                            ),
                             const SizedBox(height: 10),
                             Text(
                               isArabic ? 'من المعرض' : 'Gallery',
@@ -259,17 +274,26 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
       _parsedReceipt = null;
     });
 
+    final settings = context.read<SettingsProvider>();
+    final catProvider = context.read<CategoryProvider>();
+
     try {
-      // استدعاء خدمة التعرف الضوئي
-      final parsed = await _scannerService.scanReceipt(file);
+      // استدعاء خدمة التعرف الضوئي (مع دعم Gemini Vision والتراجع لـ ML Kit)
+      final parsed = await _scannerService.scanReceipt(
+        file,
+        apiKey: settings.isAiEnabled ? settings.aiApiKey : null,
+        categories: catProvider.categories,
+        isArabic: settings.isArabic,
+      );
 
       if (!mounted) return;
-      final catProvider = context.read<CategoryProvider>();
       String? matchedCategoryId = parsed.suggestedCategoryId;
 
       // مطابقة التصنيف مع قائمة التصنيفات المسجلة في التطبيق
       if (matchedCategoryId != null) {
-        final exists = catProvider.expenseCategories.any((c) => c.id == matchedCategoryId);
+        final exists = catProvider.expenseCategories.any(
+          (c) => c.id == matchedCategoryId,
+        );
         if (!exists && catProvider.expenseCategories.isNotEmpty) {
           matchedCategoryId = catProvider.expenseCategories.first.id;
         }
@@ -316,9 +340,17 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
   }
 
   /// نقل البيانات المستخرجة إلى شاشة إضافة المعاملة المفصلة [AddEditTransactionScreen]
-  void _useInAddTransaction() {
-    final amount = double.tryParse(_amountController.text.replaceAll(',', '').trim());
+  Future<void> _useInAddTransaction() async {
+    final amount = double.tryParse(
+      _amountController.text.replaceAll(',', '').trim(),
+    );
 
+    String? permanentReceiptPath;
+    if (_imageFile != null) {
+      permanentReceiptPath = await ReceiptScannerService.persistReceiptImage(_imageFile!.path);
+    }
+
+    if (!mounted) return;
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -330,7 +362,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
               : null,
           initialCategoryId: _selectedCategoryId,
           initialDate: _selectedDate,
-          initialReceiptImagePath: _imageFile?.path,
+          initialReceiptImagePath: permanentReceiptPath,
         ),
       ),
     );
@@ -345,7 +377,11 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     if (amountText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isArabic ? 'يرجى إدخال المبلغ الإجمالي' : 'Please enter the total amount'),
+          content: Text(
+            isArabic
+                ? 'يرجى إدخال المبلغ الإجمالي'
+                : 'Please enter the total amount',
+          ),
           backgroundColor: AppColors.expense,
         ),
       );
@@ -366,7 +402,11 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     if (_selectedCategoryId == null || _selectedWalletId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isArabic ? 'يرجى اختيار المحفظة والتصنيف' : 'Please select wallet and category'),
+          content: Text(
+            isArabic
+                ? 'يرجى اختيار المحفظة والتصنيف'
+                : 'Please select wallet and category',
+          ),
           backgroundColor: AppColors.expense,
         ),
       );
@@ -377,6 +417,12 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
     final walletProvider = context.read<WalletProvider>();
 
     try {
+      // حفظ صورة الإيصال الدائمة في مجلد المستندات
+      String? permanentReceiptPath;
+      if (_imageFile != null) {
+        permanentReceiptPath = await ReceiptScannerService.persistReceiptImage(_imageFile!.path);
+      }
+
       // إضافة المعاملة في قاعدة البيانات
       await txProvider.addTransaction(
         amount: amount,
@@ -387,7 +433,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
         title: _merchantController.text.trim().isNotEmpty
             ? _merchantController.text.trim()
             : (isArabic ? 'فاتورة مشتريات' : 'Purchase Receipt'),
-        receiptImagePath: _imageFile?.path,
+        receiptImagePath: permanentReceiptPath,
         currencyCode: settings.currencyCode,
       );
 
@@ -401,7 +447,13 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
               children: [
                 const Icon(Icons.check_circle_rounded, color: Colors.white),
                 const SizedBox(width: 10),
-                Text(isArabic ? 'تم حفظ المعاملة بنجاح ✓' : 'Transaction saved successfully ✓'),
+                Expanded(
+                  child: Text(
+                    isArabic
+                        ? 'تم حفظ المعاملة بنجاح بتاريخ ${DateFormatter.formatShort(_selectedDate, isArabic: isArabic)} ✓'
+                        : 'Transaction saved for ${DateFormatter.formatShort(_selectedDate, isArabic: isArabic)} ✓',
+                  ),
+                ),
               ],
             ),
             backgroundColor: AppColors.income,
@@ -414,7 +466,9 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(isArabic ? 'حدث خطأ أثناء الحفظ' : 'Error saving transaction'),
+            content: Text(
+              isArabic ? 'حدث خطأ أثناء الحفظ' : 'Error saving transaction',
+            ),
             backgroundColor: AppColors.expense,
           ),
         );
@@ -437,7 +491,11 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.document_scanner_rounded, color: AppColors.primary, size: 22),
+            const Icon(
+              Icons.document_scanner_rounded,
+              color: AppColors.primary,
+              size: 22,
+            ),
             const SizedBox(width: 8),
             Text(
               isArabic ? 'مسح الفاتورة الذكي' : 'Smart Receipt Scanner',
@@ -456,8 +514,14 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
       body: _imageFile == null
           ? _buildEmptyState(isArabic, isDark)
           : _isProcessing
-              ? _buildProcessingState(isArabic, isDark)
-              : _buildResultView(isArabic, isDark, currencySymbol, catProvider, walletProvider),
+          ? _buildProcessingState(isArabic, isDark)
+          : _buildResultView(
+              isArabic,
+              isDark,
+              currencySymbol,
+              catProvider,
+              walletProvider,
+            ),
     );
   }
 
@@ -491,7 +555,9 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
             ),
             const SizedBox(height: 24),
             Text(
-              isArabic ? 'المسح الضوئي الذكي للفواتير' : 'Smart AI Receipt Scanner',
+              isArabic
+                  ? 'المسح الضوئي الذكي للفواتير'
+                  : 'Smart AI Receipt Scanner',
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
             ),
@@ -517,12 +583,17 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                 icon: const Icon(Icons.camera_alt_rounded),
                 label: Text(
                   isArabic ? 'التقاط صورة بالكاميرا' : 'Take Photo with Camera',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                   elevation: 2,
                 ),
               ),
@@ -536,11 +607,18 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                 onPressed: () => _pickAndScanImage(ImageSource.gallery),
                 icon: const Icon(Icons.photo_library_rounded),
                 label: Text(
-                  isArabic ? 'اختيار من معرض الصور' : 'Choose from Photo Gallery',
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  isArabic
+                      ? 'اختيار من معرض الصور'
+                      : 'Choose from Photo Gallery',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 style: OutlinedButton.styleFrom(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
                 ),
               ),
             ),
@@ -559,10 +637,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
           Positioned.fill(
             child: Opacity(
               opacity: 0.35,
-              child: Image.file(
-                _imageFile!,
-                fit: BoxFit.cover,
-              ),
+              child: Image.file(_imageFile!, fit: BoxFit.cover),
             ),
           ),
         Container(
@@ -580,13 +655,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                 height: 3,
                 decoration: BoxDecoration(
                   color: AppColors.primary,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withValues(alpha: 0.9),
-                      blurRadius: 16,
-                      spreadRadius: 4,
-                    ),
-                  ],
+                  boxShadow: const [],
                 ),
               ),
             );
@@ -600,13 +669,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
             decoration: BoxDecoration(
               color: isDark ? AppColors.darkSurface : Colors.white,
               borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.15),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8),
-                ),
-              ],
+              boxShadow: const [],
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -621,8 +684,13 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  isArabic ? 'جاري قراءة الفاتورة الذكية...' : 'Analyzing Receipt with AI...',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  isArabic
+                      ? 'جاري قراءة الفاتورة الذكية...'
+                      : 'Analyzing Receipt with AI...',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -662,7 +730,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: isDark ? AppColors.darkCard : const Color(0xFFF8FAFC),
+              color: isDark ? AppColors.darkCard : const Color(0xFFF5F8F7),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
@@ -681,7 +749,9 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                             imagePath: _imageFile!.path,
                             title: _merchantController.text.isNotEmpty
                                 ? _merchantController.text
-                                : (isArabic ? 'صورة الفاتورة' : 'Receipt Image'),
+                                : (isArabic
+                                      ? 'صورة الفاتورة'
+                                      : 'Receipt Image'),
                           ),
                         ),
                       );
@@ -712,7 +782,11 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                           color: Colors.black26,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.zoom_in_rounded, color: Colors.white, size: 22),
+                        child: const Icon(
+                          Icons.zoom_in_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
                       ),
                     ],
                   ),
@@ -726,7 +800,10 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
                             decoration: BoxDecoration(
                               color: hasAmount
                                   ? AppColors.income.withValues(alpha: 0.15)
@@ -737,19 +814,29 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  hasAmount ? Icons.check_circle_rounded : Icons.info_outline_rounded,
+                                  hasAmount
+                                      ? Icons.check_circle_rounded
+                                      : Icons.info_outline_rounded,
                                   size: 14,
-                                  color: hasAmount ? AppColors.income : AppColors.warning,
+                                  color: hasAmount
+                                      ? AppColors.income
+                                      : AppColors.warning,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
                                   hasAmount
-                                      ? (isArabic ? 'تم التعرف بنجاح' : 'Recognized')
-                                      : (isArabic ? 'يرجى مراجعة المبلغ' : 'Check Amount'),
+                                      ? (isArabic
+                                            ? 'تم التعرف بنجاح'
+                                            : 'Recognized')
+                                      : (isArabic
+                                            ? 'يرجى مراجعة المبلغ'
+                                            : 'Check Amount'),
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
-                                    color: hasAmount ? AppColors.income : AppColors.warning,
+                                    color: hasAmount
+                                        ? AppColors.income
+                                        : AppColors.warning,
                                   ),
                                 ),
                               ],
@@ -787,7 +874,10 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
             decoration: BoxDecoration(
               color: AppColors.expense.withValues(alpha: isDark ? 0.12 : 0.08),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.expense.withValues(alpha: 0.3), width: 1.5),
+              border: Border.all(
+                color: AppColors.expense.withValues(alpha: 0.3),
+                width: 1.5,
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -796,7 +886,9 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      isArabic ? 'المبلغ الإجمالي المستخرج' : 'Extracted Total Amount',
+                      isArabic
+                          ? 'المبلغ الإجمالي المستخرج'
+                          : 'Extracted Total Amount',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -829,7 +921,9 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                     Expanded(
                       child: TextField(
                         controller: _amountController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
                         style: const TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.bold,
@@ -869,7 +963,8 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
               suffixIcon: _merchantController.text.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.clear, size: 18),
-                      onPressed: () => setState(() => _merchantController.clear()),
+                      onPressed: () =>
+                          setState(() => _merchantController.clear()),
                     )
                   : null,
             ),
@@ -921,18 +1016,80 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.calendar_today_rounded, size: 18, color: AppColors.primary),
+                  const Icon(
+                    Icons.calendar_today_rounded,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
                   const SizedBox(width: 12),
                   Text(
                     '${DateFormatter.formatShort(_selectedDate, isArabic: isArabic)}  •  ${DateFormatter.formatTime(_selectedDate, isArabic: isArabic)}',
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
                   ),
                   const Spacer(),
-                  const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
+                  const Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 14,
+                    color: Colors.grey,
+                  ),
                 ],
               ),
             ),
           ),
+          if (DateTime.now().difference(_selectedDate).inDays.abs() > 30)
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.warning.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.info_outline_rounded,
+                    color: AppColors.warning,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      isArabic
+                          ? 'تاريخ الفاتورة قديم (${DateFormatter.formatShort(_selectedDate, isArabic: isArabic)}). ستُسجل المعاملة في ذلك الشهر.'
+                          : 'Receipt date is old (${DateFormatter.formatShort(_selectedDate, isArabic: isArabic)}). Will be booked under that month.',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.warning,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () =>
+                        setState(() => _selectedDate = DateTime.now()),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      isArabic ? 'استخدم اليوم' : 'Use Today',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 18),
 
           // 5. قائمة اختيار التصنيف المقترح
@@ -962,7 +1119,10 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
             }).toList(),
             onChanged: (val) => setState(() => _selectedCategoryId = val),
             decoration: const InputDecoration(
-              contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 10,
+              ),
             ),
           ),
           const SizedBox(height: 18),
@@ -989,7 +1149,10 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
             }).toList(),
             onChanged: (val) => setState(() => _selectedWalletId = val),
             decoration: const InputDecoration(
-              contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 10,
+              ),
             ),
           ),
           const SizedBox(height: 18),
@@ -1003,7 +1166,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
             const SizedBox(height: 8),
             Container(
               decoration: BoxDecoration(
-                color: isDark ? AppColors.darkCard : const Color(0xFFF8FAFC),
+                color: isDark ? AppColors.darkCard : const Color(0xFFF5F8F7),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
                   color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
@@ -1020,14 +1183,20 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                 itemBuilder: (ctx, idx) {
                   final item = _parsedReceipt!.lineItems[idx];
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
                           child: Text(
                             item.name,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                         Text(
@@ -1053,19 +1222,31 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
               onTap: () => setState(() => _showRawText = !_showRawText),
               borderRadius: BorderRadius.circular(12),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
-                  color: (isDark ? AppColors.darkCard : const Color(0xFFF1F5F9))
+                  color: (isDark ? AppColors.darkCard : const Color(0xFFEAF1ED))
                       .withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.notes_rounded, size: 18, color: Colors.grey),
+                    const Icon(
+                      Icons.notes_rounded,
+                      size: 18,
+                      color: Colors.grey,
+                    ),
                     const SizedBox(width: 8),
                     Text(
-                      isArabic ? 'النص المقروء بالكامل (OCR)' : 'Full Scanned Text (OCR)',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      isArabic
+                          ? 'النص المقروء بالكامل (OCR)'
+                          : 'Full Scanned Text (OCR)',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const Spacer(),
                     Icon(
@@ -1084,10 +1265,14 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+                  color: isDark
+                      ? const Color(0xFF163C30)
+                      : const Color(0xFFF5F8F7),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                    color: isDark
+                        ? AppColors.darkBorder
+                        : AppColors.lightBorder,
                   ),
                 ),
                 child: Column(
@@ -1097,18 +1282,31 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          isArabic ? 'نص الفاتورة المستخرج:' : 'Extracted Text:',
-                          style: const TextStyle(fontSize: 11, color: Colors.grey),
+                          isArabic
+                              ? 'نص الفاتورة المستخرج:'
+                              : 'Extracted Text:',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey,
+                          ),
                         ),
                         IconButton(
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.copy_rounded, size: 16, color: AppColors.primary),
+                          icon: const Icon(
+                            Icons.copy_rounded,
+                            size: 16,
+                            color: AppColors.primary,
+                          ),
                           onPressed: () {
-                            Clipboard.setData(ClipboardData(text: _parsedReceipt!.rawText));
+                            Clipboard.setData(
+                              ClipboardData(text: _parsedReceipt!.rawText),
+                            );
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text(isArabic ? 'تم نسخ النص ✓' : 'Text copied ✓'),
+                                content: Text(
+                                  isArabic ? 'تم نسخ النص ✓' : 'Text copied ✓',
+                                ),
                                 duration: const Duration(seconds: 1),
                               ),
                             );
@@ -1119,7 +1317,11 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                     const SizedBox(height: 6),
                     Text(
                       _parsedReceipt!.rawText,
-                      style: const TextStyle(fontSize: 12, height: 1.4, fontFamily: 'monospace'),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.4,
+                        fontFamily: 'monospace',
+                      ),
                     ),
                   ],
                 ),
@@ -1141,12 +1343,17 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                     icon: const Icon(Icons.edit_note_rounded),
                     label: Text(
                       isArabic ? 'تعبئة المعاملة' : 'Fill Transaction',
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                       elevation: 0,
                     ),
                   ),
@@ -1160,7 +1367,11 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                   height: 52,
                   child: OutlinedButton.icon(
                     onPressed: _quickSaveTransaction,
-                    icon: const Icon(Icons.flash_on_rounded, color: AppColors.income, size: 18),
+                    icon: const Icon(
+                      Icons.flash_on_rounded,
+                      color: AppColors.income,
+                      size: 18,
+                    ),
                     label: Text(
                       isArabic ? 'حفظ فوري' : 'Quick Save',
                       style: const TextStyle(
@@ -1170,8 +1381,13 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
                       ),
                     ),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.income, width: 1.5),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      side: const BorderSide(
+                        color: AppColors.income,
+                        width: 1.5,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
                   ),
                 ),
