@@ -36,6 +36,7 @@ class BudgetProvider with ChangeNotifier {
     return transactions
         .where((tx) {
           if (tx.type != TransactionType.expense) return false;
+          if (tx.currencyCode != budget.currencyCode) return false;
           // Date range check
           if (tx.dateTime.isBefore(budget.startDate) ||
               tx.dateTime.isAfter(budget.endDate)) {
@@ -94,7 +95,7 @@ class BudgetProvider with ChangeNotifier {
       final lastLevel = prefs.getInt(key) ?? 0;
       if (level <= lastLevel) continue;
 
-      await NotificationService.instance.showNotification(
+      final delivered = await NotificationService.instance.showNotification(
         id: 2000 + (budget.id.hashCode.abs() % 100000),
         title: level == 2
             ? (isArabic ? 'تجاوزت حد الميزانية' : 'Budget limit exceeded')
@@ -109,7 +110,7 @@ class BudgetProvider with ChangeNotifier {
                   ? 'استخدمت 80% أو أكثر من ميزانيتك الحالية.'
                   : 'You have used at least 80% of your current budget.'),
       );
-      await prefs.setInt(key, level);
+      if (delivered) await prefs.setInt(key, level);
     }
   }
 
