@@ -1,11 +1,11 @@
-import 'package:uuid/uuid.dart';
-
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/date_formatter.dart';
@@ -84,6 +84,7 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
   String? _selectedToWalletId;
   DateTime _selectedDate = DateTime.now();
   String? _receiptImagePath;
+  final Set<String> _pendingReceiptPaths = <String>{};
   final ImagePicker _picker = ImagePicker();
 
   /// حالة المعالجة عند المسح الذكي للفاتورة من داخل الشاشة
@@ -118,6 +119,9 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
     }
     if (widget.initialReceiptImagePath != null) {
       _receiptImagePath = widget.initialReceiptImagePath;
+      if (widget.transaction == null) {
+        _pendingReceiptPaths.add(widget.initialReceiptImagePath!);
+      }
     }
 
     final existing = widget.transaction;
@@ -170,6 +174,9 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
 
   @override
   void dispose() {
+    for (final path in _pendingReceiptPaths) {
+      unawaited(ReceiptScannerService.deleteManagedReceipt(path));
+    }
     _amountController.dispose();
     _titleController.dispose();
     _noteController.dispose();
@@ -178,6 +185,7 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
 
   /// مسح الفاتورة بالكاميرا أو المعرض واستخراج البيانات وتعبئة حقول الشاشة آلياً
   Future<void> _scanAndAutoFill(ImageSource source) async {
+    String? persistedPath;
     try {
       final pickedFile = await _picker.pickImage(
         source: source,
@@ -190,7 +198,9 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
       });
 
       final file = File(pickedFile.path);
-      final permanentPath = await ReceiptScannerService.persistReceiptImage(pickedFile.path);
+      persistedPath = await ReceiptScannerService.persistReceiptImage(
+        pickedFile.path,
+      );
       // معالجة الفاتورة واستخراج البيانات
       final parsed = await ReceiptScannerService.instance.scanReceipt(file);
 
@@ -210,9 +220,11 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
         }
 
         // تحديث الحقول في الشاشة بالبيانات المستخرجة
+        final previousPath = _receiptImagePath;
         setState(() {
           _isScanning = false;
-          _receiptImagePath = permanentPath;
+          _receiptImagePath = persistedPath;
+          _pendingReceiptPaths.add(persistedPath!);
           _selectedType = TransactionType.expense;
 
           if (parsed.totalAmount != null) {
@@ -234,6 +246,9 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
             _selectedCategoryId = newCatId;
           }
         });
+        if (previousPath != null && _pendingReceiptPaths.remove(previousPath)) {
+          unawaited(ReceiptScannerService.deleteManagedReceipt(previousPath));
+        }
 
         // إظهار إشعار نجاح استخراج البيانات
         ScaffoldMessenger.of(context).showSnackBar(
@@ -255,8 +270,14 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
+      } else {
+        await ReceiptScannerService.deleteManagedReceipt(persistedPath);
       }
     } catch (e) {
+      if (persistedPath != null) {
+        _pendingReceiptPaths.remove(persistedPath);
+        await ReceiptScannerService.deleteManagedReceipt(persistedPath);
+      }
       if (mounted) {
         setState(() {
           _isScanning = false;
@@ -298,7 +319,9 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
             ),
             decoration: BoxDecoration(
               color: isDark ? AppColors.darkCard : Colors.white,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
             ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -320,8 +343,13 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
                     const Icon(Icons.auto_awesome, color: AppColors.primary),
                     const SizedBox(width: 8),
                     Text(
-                      isArabic ? 'تعبئة تلقائية ذكية (نص أو SMS)' : 'Smart AI Autofill (Text or SMS)',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      isArabic
+                          ? 'تعبئة تلقائية ذكية (نص أو SMS)'
+                          : 'Smart AI Autofill (Text or SMS)',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                   ],
                 ),
@@ -329,7 +357,9 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
-                    color: isDark ? AppColors.darkBackground : Colors.grey.shade100,
+                    color: isDark
+                        ? AppColors.darkBackground
+                        : Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: TextField(
@@ -358,10 +388,17 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
                       ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
                         )
                       : const Icon(Icons.auto_awesome),
-                  label: Text(isArabic ? 'استخراج وتعبئة الحقول ✨' : 'Extract & Fill Fields ✨'),
+                  label: Text(
+                    isArabic
+                        ? 'استخراج وتعبئة الحقول ✨'
+                        : 'Extract & Fill Fields ✨',
+                  ),
                 ),
               ],
             ),
@@ -431,7 +468,9 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
         actions: [
           if (settings.isAiEnabled)
             IconButton(
-              tooltip: isArabic ? 'تعبئة ذكية بالذكاء الاصطناعي' : 'Smart AI Autofill',
+              tooltip: isArabic
+                  ? 'تعبئة ذكية بالذكاء الاصطناعي'
+                  : 'Smart AI Autofill',
               icon: const Icon(Icons.auto_awesome, color: AppColors.primary),
               onPressed: _openSmartAiFiller,
             ),
@@ -691,7 +730,9 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
                 setState(() {
                   _selectedWalletId = val;
                   final newSource = walletProvider.getWalletById(val);
-                  final currentDest = walletProvider.getWalletById(_selectedToWalletId);
+                  final currentDest = walletProvider.getWalletById(
+                    _selectedToWalletId,
+                  );
                   if (_selectedToWalletId == val ||
                       (newSource != null &&
                           currentDest != null &&
@@ -722,14 +763,17 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
               const SizedBox(height: 8),
               Builder(
                 builder: (context) {
-                  final currentSourceWallet =
-                      walletProvider.getWalletById(_selectedWalletId);
+                  final currentSourceWallet = walletProvider.getWalletById(
+                    _selectedWalletId,
+                  );
                   final matchingWallets = walletProvider.wallets
-                      .where((w) =>
-                          w.id != _selectedWalletId &&
-                          (currentSourceWallet == null ||
-                              w.currencyCode ==
-                                  currentSourceWallet.currencyCode))
+                      .where(
+                        (w) =>
+                            w.id != _selectedWalletId &&
+                            (currentSourceWallet == null ||
+                                w.currencyCode ==
+                                    currentSourceWallet.currencyCode),
+                      )
                       .toList();
 
                   if (matchingWallets.isEmpty) {
@@ -765,9 +809,10 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
 
                   return DropdownButtonFormField<String>(
                     key: ValueKey(
-                        'to_wallet_${_selectedWalletId}_$_selectedToWalletId'),
-                    initialValue: matchingWallets.any(
-                            (w) => w.id == _selectedToWalletId)
+                      'to_wallet_${_selectedWalletId}_$_selectedToWalletId',
+                    ),
+                    initialValue:
+                        matchingWallets.any((w) => w.id == _selectedToWalletId)
                         ? _selectedToWalletId
                         : null,
                     items: matchingWallets.map((w) {
@@ -1026,8 +1071,18 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
                             color: Colors.white,
                             size: 18,
                           ),
-                          onPressed: () =>
-                              setState(() => _receiptImagePath = null),
+                          onPressed: () {
+                            final removedPath = _receiptImagePath;
+                            setState(() => _receiptImagePath = null);
+                            if (removedPath != null &&
+                                _pendingReceiptPaths.remove(removedPath)) {
+                              unawaited(
+                                ReceiptScannerService.deleteManagedReceipt(
+                                  removedPath,
+                                ),
+                              );
+                            }
+                          },
                         ),
                       ),
                     ),
@@ -1474,6 +1529,12 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
           oldTx: existing,
           walletProvider: walletProvider,
         );
+        if (existing.receiptImagePath != null &&
+            existing.receiptImagePath != _receiptImagePath) {
+          await ReceiptScannerService.deleteManagedReceipt(
+            existing.receiptImagePath,
+          );
+        }
       } else {
         await txProvider.addTransaction(
           transactionId: _newTransactionId,
@@ -1497,6 +1558,10 @@ class _AddEditTransactionScreenState extends State<AddEditTransactionScreen> {
         );
 
         await routineProvider.loadRoutines();
+      }
+
+      if (_receiptImagePath != null) {
+        _pendingReceiptPaths.remove(_receiptImagePath);
       }
 
       await budgetProvider.checkAndNotify(

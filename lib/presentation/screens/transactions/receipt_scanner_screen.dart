@@ -347,7 +347,9 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
 
     String? permanentReceiptPath;
     if (_imageFile != null) {
-      permanentReceiptPath = await ReceiptScannerService.persistReceiptImage(_imageFile!.path);
+      permanentReceiptPath = await ReceiptScannerService.persistReceiptImage(
+        _imageFile!.path,
+      );
     }
 
     if (!mounted) return;
@@ -415,12 +417,14 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
 
     final txProvider = context.read<TransactionProvider>();
     final walletProvider = context.read<WalletProvider>();
+    String? permanentReceiptPath;
 
     try {
       // حفظ صورة الإيصال الدائمة في مجلد المستندات
-      String? permanentReceiptPath;
       if (_imageFile != null) {
-        permanentReceiptPath = await ReceiptScannerService.persistReceiptImage(_imageFile!.path);
+        permanentReceiptPath = await ReceiptScannerService.persistReceiptImage(
+          _imageFile!.path,
+        );
       }
 
       // إضافة المعاملة في قاعدة البيانات
@@ -463,6 +467,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen>
         Navigator.pop(context);
       }
     } catch (e) {
+      await ReceiptScannerService.deleteManagedReceipt(permanentReceiptPath);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

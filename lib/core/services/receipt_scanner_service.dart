@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -35,6 +36,23 @@ class ReceiptScannerService {
       return permanentFile.path;
     } catch (_) {
       return tempPath;
+    }
+  }
+
+  /// Deletes only files owned by Waffeer's receipts directory.
+  static Future<bool> deleteManagedReceipt(String? filePath) async {
+    if (filePath == null || filePath.trim().isEmpty) return false;
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final receiptsPath = p.normalize(p.absolute(appDir.path, 'receipts'));
+      final candidate = p.normalize(p.absolute(filePath));
+      if (!p.isWithin(receiptsPath, candidate)) return false;
+      final file = File(candidate);
+      if (!await file.exists()) return false;
+      await file.delete();
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

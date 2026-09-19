@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/receipt_scanner_service.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../core/utils/date_formatter.dart';
 import '../../../data/models/transaction_model.dart';
@@ -446,12 +447,14 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
       await routine.loadRoutines();
       await routine.syncReminders(isArabic);
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
+      var restoreRequested = false;
+      final controller = messenger.showSnackBar(
         SnackBar(
           content: Text(isArabic ? 'تم حذف المعاملة' : 'Transaction deleted'),
           action: SnackBarAction(
             label: isArabic ? 'تراجع' : 'Undo',
             onPressed: () async {
+              restoreRequested = true;
               try {
                 await txProvider.restoreTransaction(
                   transaction,
@@ -460,6 +463,10 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
                 await routine.loadRoutines();
                 await routine.syncReminders(isArabic);
               } catch (_) {
+                restoreRequested = false;
+                await ReceiptScannerService.deleteManagedReceipt(
+                  transaction.receiptImagePath,
+                );
                 messenger.showSnackBar(
                   SnackBar(
                     content: Text(
@@ -474,6 +481,12 @@ class _TransactionsListScreenState extends State<TransactionsListScreen> {
           ),
         ),
       );
+      await controller.closed;
+      if (!restoreRequested) {
+        await ReceiptScannerService.deleteManagedReceipt(
+          transaction.receiptImagePath,
+        );
+      }
     } catch (_) {
       await txProvider.loadTransactions();
       messenger.showSnackBar(

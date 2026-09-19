@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/receipt_scanner_service.dart';
 import '../../../core/utils/currency_formatter.dart';
 import '../../../data/models/transaction_model.dart';
 import '../../../providers/budget_provider.dart';
@@ -221,12 +222,14 @@ class DashboardScreen extends StatelessWidget {
                     await tx.deleteTransaction(item, walletProvider: wallets);
                     await routine.loadRoutines();
                     await routine.syncReminders(ar);
-                    messenger.showSnackBar(
+                    var restoreRequested = false;
+                    final controller = messenger.showSnackBar(
                       SnackBar(
                         content: Text(ar ? 'تم حذف المعاملة' : 'Entry deleted'),
                         action: SnackBarAction(
                           label: ar ? 'تراجع' : 'Undo',
                           onPressed: () async {
+                            restoreRequested = true;
                             try {
                               await tx.restoreTransaction(
                                 item,
@@ -235,6 +238,10 @@ class DashboardScreen extends StatelessWidget {
                               await routine.loadRoutines();
                               await routine.syncReminders(ar);
                             } catch (_) {
+                              restoreRequested = false;
+                              await ReceiptScannerService.deleteManagedReceipt(
+                                item.receiptImagePath,
+                              );
                               messenger.showSnackBar(
                                 SnackBar(
                                   content: Text(
@@ -249,6 +256,12 @@ class DashboardScreen extends StatelessWidget {
                         ),
                       ),
                     );
+                    await controller.closed;
+                    if (!restoreRequested) {
+                      await ReceiptScannerService.deleteManagedReceipt(
+                        item.receiptImagePath,
+                      );
+                    }
                   } catch (_) {
                     await tx.loadTransactions();
                     messenger.showSnackBar(
