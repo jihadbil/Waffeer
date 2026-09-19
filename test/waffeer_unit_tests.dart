@@ -2,10 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:waffeer/core/utils/currency_formatter.dart';
 import 'package:waffeer/core/utils/date_formatter.dart';
+import 'package:waffeer/data/models/budget_model.dart';
 import 'package:waffeer/data/models/category_model.dart';
 import 'package:waffeer/data/models/recurring_transaction_model.dart';
 import 'package:waffeer/data/models/transaction_model.dart';
 import 'package:waffeer/data/models/wallet_model.dart';
+import 'package:waffeer/providers/budget_provider.dart';
 
 void main() {
   setUpAll(() async {
@@ -15,14 +17,50 @@ void main() {
 
   group('Currency Formatter Tests', () {
     test('Formats amounts correctly with USD', () {
-      final formatted = CurrencyFormatter.format(1500.50, currencyCode: 'USD', isArabic: false);
+      final formatted = CurrencyFormatter.format(
+        1500.50,
+        currencyCode: 'USD',
+        isArabic: false,
+      );
       expect(formatted, contains('1,500.50'));
     });
 
     test('Formats zero amounts properly', () {
-      final formattedZero = CurrencyFormatter.format(0, currencyCode: 'USD', isArabic: false);
+      final formattedZero = CurrencyFormatter.format(
+        0,
+        currencyCode: 'USD',
+        isArabic: false,
+      );
       expect(formattedZero, contains('0'));
     });
+  });
+
+  test('budgets include only transactions in the same currency', () {
+    final budget = BudgetModel(
+      id: 'usd-budget',
+      limitAmount: 500,
+      period: BudgetPeriod.monthly,
+      startDate: DateTime(2026, 1, 1),
+      endDate: DateTime(2026, 1, 31, 23, 59, 59),
+      currencyCode: 'USD',
+    );
+    TransactionModel expense(String id, String currency) => TransactionModel(
+      id: id,
+      amount: 100,
+      type: TransactionType.expense,
+      categoryId: 'cat_food',
+      walletId: 'wallet-$currency',
+      dateTime: DateTime(2026, 1, 15),
+      currencyCode: currency,
+    );
+
+    expect(
+      BudgetProvider().getSpentAmount(budget, [
+        expense('usd', 'USD'),
+        expense('eur', 'EUR'),
+      ]),
+      100,
+    );
   });
 
   group('Date Formatter Tests', () {
@@ -35,7 +73,10 @@ void main() {
     test('Formats Relative Yesterday correctly', () {
       final yesterday = DateTime.now().subtract(const Duration(days: 1));
       expect(DateFormatter.formatRelative(yesterday, isArabic: true), 'أمس');
-      expect(DateFormatter.formatRelative(yesterday, isArabic: false), 'Yesterday');
+      expect(
+        DateFormatter.formatRelative(yesterday, isArabic: false),
+        'Yesterday',
+      );
     });
 
     test('Formats Short and Time accurately', () {

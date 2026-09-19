@@ -3,8 +3,11 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:waffeer/core/database/db_helper.dart';
+import 'package:waffeer/data/models/category_model.dart';
+import 'package:waffeer/data/models/debt_model.dart';
 import 'package:waffeer/data/models/routine_expense_model.dart';
 import 'package:waffeer/data/models/transaction_model.dart';
+import 'package:waffeer/data/models/wallet_model.dart';
 import 'package:waffeer/providers/routine_provider.dart';
 
 void main() {
@@ -307,14 +310,194 @@ void main() {
   });
 
   test(
-    'deleting a linked wallet pauses schedules instead of breaking startup',
+    'deleting a linked wallet is rejected without changing schedules',
     () async {
-      await helper.saveRoutine(
-        item(mode: RecordingMode.automatic, due: DateTime(2026, 1, 1)),
+      const linkedWalletId = 'linked-wallet';
+      await helper.insertWallet(
+        const WalletModel(
+          id: linkedWalletId,
+          nameEn: 'Linked',
+          nameAr: 'مرتبطة',
+          initialBalance: 100,
+          currentBalance: 100,
+          currencyCode: 'USD',
+          iconCodePoint: 0xe040,
+          colorValue: 0xFF64748B,
+          type: WalletType.other,
+        ),
       );
-      await helper.deleteWallet(walletId);
-      expect((await helper.getAllRoutineExpenses()).single.isActive, isFalse);
-      expect(await helper.processRoutineDue(), 0);
+      await helper.saveRoutine(
+        item(
+          mode: RecordingMode.automatic,
+          due: DateTime(2026, 1, 1),
+        ).copyWith(walletId: linkedWalletId),
+      );
+      await expectLater(helper.deleteWallet(linkedWalletId), throwsStateError);
+      expect((await helper.getAllRoutineExpenses()).single.isActive, isTrue);
+      expect(
+        (await helper.getAllWallets()).any((w) => w.id == linkedWalletId),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'used categories cannot delete transactions or corrupt balances',
+    () async {
+      const category = CategoryModel(
+        id: 'custom-food',
+        nameEn: 'Custom food',
+        nameAr: 'طعام مخصص',
+        iconCodePoint: 0xe57a,
+        colorValue: 0xFFEF4444,
+        type: CategoryType.expense,
+      );
+      await helper.insertCategory(category);
+      await helper.insertTransaction(
+        TransactionModel(
+          id: 'protected-transaction',
+          amount: 25,
+          type: TransactionType.expense,
+          categoryId: category.id,
+          walletId: walletId,
+          dateTime: DateTime(2026, 1, 1),
+          currencyCode: 'USD',
+        ),
+      );
+
+      await expectLater(helper.deleteCategory(category.id), throwsStateError);
+      expect(await balance(), 975);
+      expect(
+        (await helper.getAllTransactions()).single.id,
+        'protected-transaction',
+      );
+      await expectLater(
+        (await helper.database).delete(
+          'categories',
+          where: 'id = ?',
+          whereArgs: [category.id],
+        ),
+        throwsA(isA<DatabaseException>()),
+      );
+    },
+  );
+
+  test('initial setup is atomic and safe to retry', () async {
+    final now = DateTime(2026, 1, 1);
+    Future<bool> complete() => helper.completeInitialFinancialSetup(
+      currencyCode: 'USD',
+      balance: 500,
+      monthlyIncome: 1000,
+      savingsGoal: 2000,
+      recordedAt: now,
+      goalTargetDate: DateTime(2027, 1, 1),
+      incomeTitle: 'Income',
+      priorExpensesTitle: 'Prior expenses',
+      goalTitle: 'Goal',
+      goalIconCodePoint: 0xe56c,
+      goalColorValue: 0xFFF59E0B,
+    );
+
+    expect(await complete(), isTrue);
+    expect(await complete(), isFalse);
+    expect(await balance(), 500);
+    expect((await helper.getAllTransactions()).length, 2);
+    expect((await helper.getAllGoals()).length, 1);
+  });
+
+  test('initial setup rolls every write back when one insert fails', () async {
+    final db = await helper.database;
+    await db.execute(
+      "CREATE TRIGGER fail_goal BEFORE INSERT ON goals BEGIN SELECT RAISE(ABORT, 'failure'); END",
+    );
+
+    await expectLater(
+      helper.completeInitialFinancialSetup(
+        currencyCode: 'USD',
+        balance: 500,
+        monthlyIncome: 1000,
+        savingsGoal: 2000,
+        recordedAt: DateTime(2026, 1, 1),
+        goalTargetDate: DateTime(2027, 1, 1),
+        incomeTitle: 'Income',
+        priorExpensesTitle: 'Prior expenses',
+        goalTitle: 'Goal',
+        goalIconCodePoint: 0xe56c,
+        goalColorValue: 0xFFF59E0B,
+      ),
+      throwsA(isA<DatabaseException>()),
+    );
+    expect(await balance(), 1000);
+    expect(await helper.getAllTransactions(), isEmpty);
+    expect(await helper.getAllGoals(), isEmpty);
+    expect(await db.query('app_metadata'), isEmpty);
+  });
+
+  test(
+    'debt payments reject overpayment and update wallet atomically',
+    () async {
+      await helper.insertDebt(
+        DebtModel(
+          id: 'debt-1',
+          personName: 'Friend',
+          totalAmount: 100,
+          paidAmount: 20,
+          type: DebtType.lend,
+          dueDate: DateTime(2026, 2, 1),
+          createdDate: DateTime(2026, 1, 1),
+          currencyCode: 'USD',
+        ),
+      );
+
+      await expectLater(
+        helper.recordDebtPaymentAtomically(
+          debtId: 'debt-1',
+          paymentAmount: 90,
+          paidAt: DateTime(2026, 1, 2),
+          transactionTitle: 'Repayment',
+        ),
+        throwsStateError,
+      );
+      expect((await helper.getAllDebts()).single.paidAmount, 20);
+
+      await helper.recordDebtPaymentAtomically(
+        debtId: 'debt-1',
+        paymentAmount: 50,
+        walletId: walletId,
+        paidAt: DateTime(2026, 1, 2),
+        transactionTitle: 'Repayment',
+      );
+      expect((await helper.getAllDebts()).single.paidAmount, 70);
+      expect(await balance(), 1050);
+      expect(
+        (await helper.getAllTransactions()).single.tag,
+        'debt_payment:debt-1',
+      );
+
+      await helper.insertWallet(
+        const WalletModel(
+          id: 'eur-wallet',
+          nameEn: 'EUR',
+          nameAr: 'يورو',
+          initialBalance: 0,
+          currentBalance: 0,
+          currencyCode: 'EUR',
+          iconCodePoint: 0xe040,
+          colorValue: 0xFF64748B,
+          type: WalletType.other,
+        ),
+      );
+      await expectLater(
+        helper.recordDebtPaymentAtomically(
+          debtId: 'debt-1',
+          paymentAmount: 10,
+          walletId: 'eur-wallet',
+          paidAt: DateTime(2026, 1, 3),
+          transactionTitle: 'Bad repayment',
+        ),
+        throwsStateError,
+      );
+      expect((await helper.getAllDebts()).single.paidAmount, 70);
     },
   );
 
