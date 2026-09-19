@@ -11,11 +11,13 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
   bool _isInitialized = false;
+  bool _initializationAttempted = false;
 
   NotificationService._init();
 
   Future<void> initialize() async {
-    if (_isInitialized) return;
+    if (_isInitialized || _initializationAttempted) return;
+    _initializationAttempted = true;
 
     const androidSettings = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
@@ -38,6 +40,7 @@ class NotificationService {
 
     try {
       timezone_data.initializeTimeZones();
+      _configureLocalTimezone();
       await _notificationsPlugin.initialize(
         initSettings,
         onDidReceiveNotificationResponse: (response) {},
@@ -48,7 +51,51 @@ class NotificationService {
     }
   }
 
+  void _configureLocalTimezone() {
+    final nativeNow = DateTime.now();
+    final direct = tz.timeZoneDatabase.locations[nativeNow.timeZoneName];
+    if (direct != null) {
+      tz.setLocalLocation(direct);
+      return;
+    }
+
+    // Match the device's native offsets across the year. Several IANA zones
+    // can share the same rules; any exact rule match schedules the same local
+    // wall time, including daylight-saving transitions.
+    final samples = <DateTime>[
+      for (var month = 1; month <= 12; month++)
+        DateTime(nativeNow.year, month, 15, 12),
+    ];
+    tz.Location? offsetMatch;
+    for (final location in tz.timeZoneDatabase.locations.values) {
+      final matches = samples.every(
+        (sample) =>
+            tz.TZDateTime(
+              location,
+              sample.year,
+              sample.month,
+              sample.day,
+              sample.hour,
+            ).timeZoneOffset ==
+            sample.timeZoneOffset,
+      );
+      if (!matches) continue;
+      offsetMatch ??= location;
+      final abbreviation = tz.TZDateTime.from(
+        nativeNow.toUtc(),
+        location,
+      ).timeZoneName;
+      if (abbreviation == nativeNow.timeZoneName) {
+        tz.setLocalLocation(location);
+        return;
+      }
+    }
+    if (offsetMatch != null) tz.setLocalLocation(offsetMatch);
+  }
+
   Future<bool> requestPermissions() async {
+    await initialize();
+    if (!_isInitialized) return false;
     try {
       final androidImplementation = _notificationsPlugin
           .resolvePlatformSpecificImplementation<
@@ -77,11 +124,13 @@ class NotificationService {
     }
   }
 
-  Future<void> showNotification({
+  Future<bool> showNotification({
     required int id,
     required String title,
     required String body,
   }) async {
+    await initialize();
+    if (!_isInitialized) return false;
     try {
       const androidDetails = AndroidNotificationDetails(
         'waffeer_general_channel',
@@ -104,7 +153,10 @@ class NotificationService {
       );
 
       await _notificationsPlugin.show(id, title, body, notificationDetails);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<bool> scheduleDailyReminder({
@@ -113,6 +165,8 @@ class NotificationService {
     required bool isArabic,
     bool requestPermission = true,
   }) async {
+    await initialize();
+    if (!_isInitialized) return false;
     if (requestPermission && !await requestPermissions()) return false;
 
     try {
@@ -164,12 +218,16 @@ class NotificationService {
   }
 
   Future<void> cancelDailyReminder() async {
+    await initialize();
+    if (!_isInitialized) return;
     try {
       await _notificationsPlugin.cancel(dailyReminderId);
     } catch (_) {}
   }
 
   Future<void> cancelAll() async {
+    await initialize();
+    if (!_isInitialized) return;
     try {
       await _notificationsPlugin.cancelAll();
     } catch (_) {}
@@ -179,6 +237,8 @@ class NotificationService {
     List<RoutineExpenseModel> routines, {
     required bool isArabic,
   }) async {
+    await initialize();
+    if (!_isInitialized) return;
     try {
       final pending = await _notificationsPlugin.pendingNotificationRequests();
       for (final notification in pending.where(
@@ -206,7 +266,7 @@ class NotificationService {
           isArabic
               ? 'حان الموعد. افتح وفير لتأكيد التسجيل.'
               : 'Due now. Open Waffeer to confirm recording.',
-          tz.TZDateTime.from(item.nextDueDate!.toUtc(), tz.UTC),
+          tz.TZDateTime.from(item.nextDueDate!, tz.local),
           const NotificationDetails(
             android: AndroidNotificationDetails(
               'waffeer_routines',
