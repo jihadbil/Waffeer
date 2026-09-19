@@ -4,8 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/currencies.dart';
-import '../../../data/models/transaction_model.dart';
-import '../../../providers/category_provider.dart';
+import '../../../core/database/db_helper.dart';
 import '../../../providers/goal_provider.dart';
 import '../../../providers/settings_provider.dart';
 import '../../../providers/transaction_provider.dart';
@@ -178,7 +177,6 @@ class _FinancialSetupScreenState extends State<FinancialSetupScreen> {
     final settings = context.read<SettingsProvider>();
     final isArabic = settings.isArabic;
     final walletProvider = context.read<WalletProvider>();
-    final categoryProvider = context.read<CategoryProvider>();
     final transactionProvider = context.read<TransactionProvider>();
     final goalProvider = context.read<GoalProvider>();
     final navigator = Navigator.of(context);
@@ -186,97 +184,30 @@ class _FinancialSetupScreenState extends State<FinancialSetupScreen> {
     setState(() => _isSubmitting = true);
     try {
       await walletProvider.loadWallets(widget.currencyCode);
-      await categoryProvider.loadCategories();
-      await transactionProvider.loadTransactions();
-      await goalProvider.loadGoals();
-
       final balance = _amountOf(_balanceController);
       final income = _amountOf(_incomeController);
-      final defaultWallet = walletProvider.defaultWallet;
-
-      if (defaultWallet != null) {
-        if (income > 0 && categoryProvider.incomeCategories.isNotEmpty) {
-          final salaryCategory = categoryProvider.incomeCategories.firstWhere(
-            (category) => category.id == 'cat_salary',
-            orElse: () => categoryProvider.incomeCategories.first,
-          );
-
-          if (balance >= income) {
-            final baseBalance = balance - income;
-            await walletProvider.updateWallet(
-              defaultWallet.copyWith(
-                initialBalance: baseBalance,
-                currentBalance: baseBalance,
-              ),
-            );
-            await transactionProvider.addTransaction(
-              amount: income,
-              type: TransactionType.income,
-              categoryId: salaryCategory.id,
-              walletId: defaultWallet.id,
-              dateTime: DateTime.now(),
-              title: isArabic ? 'دخل هذا الشهر' : 'This month income',
-              currencyCode: widget.currencyCode,
-              walletProvider: walletProvider,
-            );
-          } else {
-            // Balance is less than income (user spent some portion already)
-            await walletProvider.updateWallet(
-              defaultWallet.copyWith(
-                initialBalance: 0,
-                currentBalance: 0,
-              ),
-            );
-            await transactionProvider.addTransaction(
-              amount: income,
-              type: TransactionType.income,
-              categoryId: salaryCategory.id,
-              walletId: defaultWallet.id,
-              dateTime: DateTime.now(),
-              title: isArabic ? 'دخل هذا الشهر' : 'This month income',
-              currencyCode: widget.currencyCode,
-              walletProvider: walletProvider,
-            );
-            final priorSpent = income - balance;
-            if (priorSpent > 0 && categoryProvider.expenseCategories.isNotEmpty) {
-              final otherCategory = categoryProvider.expenseCategories.firstWhere(
-                (category) => category.id == 'cat_other',
-                orElse: () => categoryProvider.expenseCategories.first,
-              );
-              await transactionProvider.addTransaction(
-                amount: priorSpent,
-                type: TransactionType.expense,
-                categoryId: otherCategory.id,
-                walletId: defaultWallet.id,
-                dateTime: DateTime.now(),
-                title: isArabic ? 'مصاريف سابقة هذا الشهر' : 'Prior expenses this month',
-                currencyCode: widget.currencyCode,
-                walletProvider: walletProvider,
-              );
-            }
-          }
-        } else if (balance > 0) {
-          await walletProvider.updateWallet(
-            defaultWallet.copyWith(
-              initialBalance: balance,
-              currentBalance: balance,
-            ),
-          );
-        }
-      }
-
       final goal = _amountOf(_goalController);
-      if (goal > 0) {
-        await goalProvider.addGoal(
-          title: isArabic ? 'هدف الادخار الأول' : 'First savings goal',
-          targetAmount: goal,
-          targetDate: DateTime.now().add(const Duration(days: 365)),
-          currencyCode: widget.currencyCode,
-          iconCodePoint: Icons.savings_rounded.codePoint,
-          iconFontFamily: Icons.savings_rounded.fontFamily,
-          colorValue: AppColors.warning.toARGB32(),
-        );
-      }
+      final recordedAt = DateTime.now();
+      await DatabaseHelper.instance.completeInitialFinancialSetup(
+        currencyCode: widget.currencyCode,
+        balance: balance,
+        monthlyIncome: income,
+        savingsGoal: goal,
+        recordedAt: recordedAt,
+        goalTargetDate: recordedAt.add(const Duration(days: 365)),
+        incomeTitle: isArabic ? 'دخل هذا الشهر' : 'This month income',
+        priorExpensesTitle: isArabic
+            ? 'مصاريف سابقة هذا الشهر'
+            : 'Prior expenses this month',
+        goalTitle: isArabic ? 'هدف الادخار الأول' : 'First savings goal',
+        goalIconCodePoint: Icons.savings_rounded.codePoint,
+        goalIconFontFamily: Icons.savings_rounded.fontFamily,
+        goalColorValue: AppColors.warning.toARGB32(),
+      );
+
+      await walletProvider.loadWallets(widget.currencyCode);
+      await transactionProvider.loadTransactions();
+      await goalProvider.loadGoals();
 
       await settings.completeFirstLaunch(widget.currencyCode);
       if (!mounted) return;
