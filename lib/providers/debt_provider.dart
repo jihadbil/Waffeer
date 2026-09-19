@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/database/db_helper.dart';
 import '../../data/models/debt_model.dart';
+import '../../data/models/transaction_model.dart';
 
 class DebtProvider with ChangeNotifier {
   final DatabaseHelper _dbHelper;
@@ -66,19 +67,22 @@ class DebtProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> recordPayment(String debtId, double paymentAmount) async {
-    final index = _debts.indexWhere((d) => d.id == debtId);
-    if (index != -1) {
-      final current = _debts[index];
-      final newPaid = current.paidAmount + paymentAmount;
-      final updated = current.copyWith(
-        paidAmount: newPaid,
-        isSettled: newPaid >= current.totalAmount,
-      );
-      await _dbHelper.updateDebt(updated);
-      _debts[index] = updated;
-      notifyListeners();
-    }
+  Future<TransactionModel?> recordPayment(
+    String debtId,
+    double paymentAmount, {
+    String? walletId,
+    required DateTime paidAt,
+    required String transactionTitle,
+  }) async {
+    final transaction = await _dbHelper.recordDebtPaymentAtomically(
+      debtId: debtId,
+      paymentAmount: paymentAmount,
+      walletId: walletId,
+      paidAt: paidAt,
+      transactionTitle: transactionTitle,
+    );
+    await loadDebts();
+    return transaction;
   }
 
   Future<void> updateDebt(DebtModel debt) async {

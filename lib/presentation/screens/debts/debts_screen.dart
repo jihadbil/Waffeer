@@ -684,32 +684,42 @@ class _DebtsScreenState extends State<DebtsScreen>
                   final debtProv = context.read<DebtProvider>();
                   final walletProv = context.read<WalletProvider>();
                   final txProv = context.read<TransactionProvider>();
+                  final isLend = debt.type == DebtType.lend;
+                  final transactionTitle = isLend
+                      ? (isArabic
+                          ? 'استرداد دين من: ${debt.personName}'
+                          : 'Debt repayment from: ${debt.personName}')
+                      : (isArabic
+                          ? 'سداد دين لـ: ${debt.personName}'
+                          : 'Debt payment to: ${debt.personName}');
 
                   HapticFeedback.mediumImpact();
-                  await debtProv.recordPayment(debt.id, val);
-                  if (selectedWalletId != null) {
-                    final isLend = debt.type == DebtType.lend;
-                    await txProv.addTransaction(
-                      amount: val,
-                      type: isLend
-                          ? TransactionType.income
-                          : TransactionType.expense,
-                      categoryId:
-                          isLend ? 'cat_other_inc' : 'cat_other_exp',
-                      walletId: selectedWalletId!,
-                      dateTime: DateTime.now(),
-                      title: isLend
-                          ? (isArabic
-                              ? 'استرداد دين من: ${debt.personName}'
-                              : 'Debt repayment from: ${debt.personName}')
-                          : (isArabic
-                              ? 'سداد دين لـ: ${debt.personName}'
-                              : 'Debt payment to: ${debt.personName}'),
-                      currencyCode: debt.currencyCode,
-                      walletProvider: walletProv,
+                  try {
+                    await debtProv.recordPayment(
+                      debt.id,
+                      val,
+                      walletId: selectedWalletId,
+                      paidAt: DateTime.now(),
+                      transactionTitle: transactionTitle,
+                    );
+                    if (selectedWalletId != null) {
+                      await txProv.loadTransactions();
+                      await walletProv.loadWallets(debt.currencyCode);
+                    }
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  } on StateError {
+                    if (!ctx.mounted) return;
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          isArabic
+                              ? 'المبلغ أكبر من المتبقي على الدين.'
+                              : 'The payment exceeds the remaining debt.',
+                        ),
+                        backgroundColor: AppColors.expense,
+                      ),
                     );
                   }
-                  if (ctx.mounted) Navigator.pop(ctx);
                 }
               },
               child: Text(
