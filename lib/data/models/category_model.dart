@@ -173,6 +173,15 @@ class CategoryModel {
       type: CategoryType.expense,
       isDefault: true,
     ),
+    const CategoryModel(
+      id: 'cat_transfer',
+      nameEn: 'Transfer',
+      nameAr: 'تحويل',
+      iconCodePoint: 0xe8d4, // swap_horiz
+      colorValue: 0xFF64748B, // Slate
+      type: CategoryType.expense,
+      isDefault: true,
+    ),
 
     // Income Categories
     const CategoryModel(

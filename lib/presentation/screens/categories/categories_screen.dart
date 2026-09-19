@@ -178,9 +178,25 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                     color: AppColors.expense,
                     size: 20,
                   ),
-                  onPressed: () {
+                  onPressed: () async {
                     HapticFeedback.mediumImpact();
-                    context.read<CategoryProvider>().deleteCategory(cat.id);
+                    try {
+                      await context.read<CategoryProvider>().deleteCategory(
+                        cat.id,
+                      );
+                    } on StateError {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            isArabic
+                                ? 'لا يمكن حذف تصنيف مستخدم في معاملات أو ميزانيات أو مصروفات دورية.'
+                                : 'This category is in use by transactions, budgets, or routines.',
+                          ),
+                          backgroundColor: AppColors.expense,
+                        ),
+                      );
+                    }
                   },
                 ),
             ],
@@ -249,8 +265,10 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                       controller: arController,
                       decoration: InputDecoration(
                         hintText: isArabic ? 'اسم التصنيف' : 'Category Name',
-                        prefixIcon:
-                            const Icon(Icons.category_outlined, size: 20),
+                        prefixIcon: const Icon(
+                          Icons.category_outlined,
+                          size: 20,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -278,8 +296,7 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                                   ? 'الاسم بالإنجليزية (اختياري)'
                                   : 'English Name (Optional)',
                               hintText: 'e.g., Shopping, Freelance',
-                              prefixIcon:
-                                  const Icon(Icons.language, size: 18),
+                              prefixIcon: const Icon(Icons.language, size: 18),
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -335,8 +352,9 @@ class _CategoriesScreenState extends State<CategoriesScreen>
                           if (main.isEmpty && secondary.isEmpty) return;
 
                           final nameAr = main.isNotEmpty ? main : secondary;
-                          final nameEn =
-                              secondary.isNotEmpty ? secondary : nameAr;
+                          final nameEn = secondary.isNotEmpty
+                              ? secondary
+                              : nameAr;
 
                           HapticFeedback.mediumImpact();
                           await ctx.read<CategoryProvider>().addCategory(
